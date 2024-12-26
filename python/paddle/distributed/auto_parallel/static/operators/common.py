@@ -17,7 +17,6 @@ import logging
 import warnings
 
 import paddle
-import paddle.distributed
 import paddle.distributed as dist
 from paddle.base.log_helper import get_logger
 from paddle.distributed.fleet.meta_optimizers.common import OP_ROLE_KEY, OpRole
