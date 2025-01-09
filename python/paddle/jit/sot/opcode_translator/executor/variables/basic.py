@@ -208,6 +208,24 @@ class ConstantVariable(VariableBase):
             DummyTracker([self]),
         )
 
+    @check_guard
+    def make_stringified_guard(self) -> list[StringifiedExpression]:
+        if self.get_py_type() is not float:
+            return super().make_stringified_guard()
+
+        frame_value_tracer = self.tracker.trace_value_from_frame()
+        epsilon = 1e-13
+        return [
+            FasterStringifiedExpression(
+                f"type({{0}}) is float and abs({self.get_py_value()!r} - {{0}}) < {epsilon}",
+                paddle.framework.core.FloatCloseGuard(
+                    self.get_py_value(), epsilon
+                ),
+                [frame_value_tracer],
+                union_free_vars(frame_value_tracer.free_vars),
+            )
+        ]
+
     @VariableFactory.register_from_value()
     def from_value(value: Any, graph: FunctionGraph, tracker: Tracker):
         if type(value) in ConstTypes:

@@ -90,6 +90,26 @@ void cos_double_grad(const Tensor& x,
 }
 
 template <typename T>
+void acos_double_grad(const Tensor& x,
+                      const Tensor& grad_out,
+                      const Tensor& grad_x_grad,
+                      Tensor* x_grad,
+                      Tensor* grad_out_grad) {
+  // acos grad grad : ddout = -((1-x*x)^(-0.5)) * ddx
+  // dx = dy * (-x)*((1-x*x)^(-1.5)) * ddx
+  auto x_tmp = 1 - x * x;
+  if (x_grad) {
+    auto x_grad_tmp = (grad_out * (-x) * pow<T>(x_tmp, -1.5) * grad_x_grad);
+    set_output<T>(x_grad_tmp, x_grad);
+  }
+
+  if (grad_out_grad) {
+    auto grad_out_grad_tmp = -pow<T>(x_tmp, -0.5) * grad_x_grad;
+    set_output<T>(grad_out_grad_tmp, grad_out_grad);
+  }
+}
+
+template <typename T>
 void minimum_double_grad(const Tensor& x,
                          const Tensor& y,
                          const paddle::optional<Tensor>& grad_x_grad,

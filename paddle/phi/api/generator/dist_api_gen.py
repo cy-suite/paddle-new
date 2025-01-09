@@ -458,7 +458,7 @@ KERNEL_CALL_TEMPLATE = """
 """
 
 # TODO(GhostScreaming): Some operators generate shape info in runtime,
-# bincount. As a result, dist_output's global shape is set uncorrectly,
+# bincount. As a result, dist_output's global shape is set incorrectly,
 # because it's generated in InferMeta function. A temporally solution is
 # use black op list to set DistTensor shape extra.
 SINGLE_SET_DIST_OUT_DIMS = """
@@ -615,7 +615,7 @@ class DistForwardAPI(ForwardAPI):
             infer_meta['local_shape'] = None
         # Inplace op that changes shape should not change its global shape
         # in inferMeta, otherwise, it may fails in reshard pass because of
-        # the inconsistence of dist_atttr and shape.
+        # the inconsistency of dist_atttr and shape.
         if 'global_shape' not in infer_meta_config:
             infer_meta['global_shape'] = None
         return infer_meta

@@ -94,7 +94,9 @@ def predict_program(program, feed_data, fetch_var_list, scope=None):
             return output
 
 
-def warmup_shape_infer(program, min_shape_feed, max_shape_feed, scope=None):
+def warmup_shape_infer(
+    program, min_shape_feed, opt_shape_feed, max_shape_feed, scope=None
+):
     paddle.framework.set_flags({"FLAGS_enable_collect_shape": True})
     with paddle.pir_utils.IrGuard():
         with paddle.static.program_guard(program):
@@ -102,6 +104,9 @@ def warmup_shape_infer(program, min_shape_feed, max_shape_feed, scope=None):
             # Run the program with input_data
             for _ in range(1):
                 executor.run(program, feed=min_shape_feed, scope=scope)
+
+            for _ in range(1):
+                executor.run(program, feed=opt_shape_feed, scope=scope)
 
             # Run the program with input_data_max_shape (fake max_shape input)
             for _ in range(1):
@@ -120,6 +125,7 @@ def warmup_shape_infer(program, min_shape_feed, max_shape_feed, scope=None):
                 )
             )
     paddle.framework.set_flags({"FLAGS_enable_collect_shape": False})
+
     return exe_program
 
 
@@ -192,6 +198,7 @@ def weight_to_tensor(network, paddle_value, trt_tensor, use_op_name):
         "pd_op.batch_norm_",
         "pd_op.layer_norm",
         "pd_op.depthwise_conv2d_transpose",
+        "pd_op.affine_channel",
     ]
     if use_op_name in forbid_cast_op:
         return trt_tensor

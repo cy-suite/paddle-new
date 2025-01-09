@@ -102,6 +102,14 @@ pir::Operation* CreateOpeartionByName(const std::string& op_name,
                                       const pir::PatternRewriter& rewriter);
 
 /**
+ * @brief Create a DataType attribute.
+ *
+ * @param pir::IrContext * ctx
+ * @param phi::DataType dtype
+ **/
+pir::Attribute CreateDataTypeAttr(pir::IrContext* ctx, phi::DataType dtype);
+
+/**
  * @brief Get the mutable data of a Variable.
  *
  * @param Variable* var

@@ -33,6 +33,7 @@ class TestBatchNormTRTPattern(TensorRTBaseTest):
         }
         self.program_config = {"feed_list": ["x"]}
         self.min_shape = {"x": [1, 1, 2, 3]}
+        self.opt_shape = {"x": [2, 1, 2, 3]}
         self.max_shape = {"x": [5, 1, 2, 3]}
 
     def test_trt_result(self):
@@ -53,6 +54,7 @@ class TestInstanceNormTRTPattern(TensorRTBaseTest):
         }
         self.program_config = {"feed_list": ["x", "weight", "bias"]}
         self.min_shape = {"x": [1, 2, 1, 3]}
+        self.opt_shape = {"x": [2, 2, 1, 3]}
         self.max_shape = {"x": [5, 2, 1, 3]}
 
     def test_trt_result(self):
@@ -69,6 +71,7 @@ class TestInstanceNormWith3DInputTRTPattern(TensorRTBaseTest):
         }
         self.program_config = {"feed_list": ["x", "weight", "bias"]}
         self.min_shape = {"x": [1, 2, 1]}
+        self.opt_shape = {"x": [2, 2, 1]}
         self.max_shape = {"x": [5, 2, 1]}
 
     def test_trt_result(self):
@@ -85,6 +88,7 @@ class TestInstanceNormWithNoneInputTRTPattern(TensorRTBaseTest):
         }
         self.program_config = {"feed_list": ["x", "weight", "bias"]}
         self.min_shape = {"x": [1, 2, 1, 3]}
+        self.opt_shape = {"x": [2, 2, 1, 3]}
         self.max_shape = {"x": [5, 2, 1, 3]}
 
     def test_trt_result(self):

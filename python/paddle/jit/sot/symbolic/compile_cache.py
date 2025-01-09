@@ -214,6 +214,7 @@ class FallbackWrapper:
             input_shape_infos,
             output_shape_infos,
             self.is_first_call,
+            self.graph_size(),
         )
 
     def __call__(self, *args, **kwargs):

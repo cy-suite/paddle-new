@@ -436,16 +436,6 @@ class StaticFunction(Generic[_InputT, _RetT]):
         self._property = kwargs.get("property", False)
         # Note: Record the patched method name for rollback.
         self._patched_name = None
-        self._get_debug_name()
-
-    def _get_debug_name(self) -> str:
-        try:
-            if self.class_instance:
-                self._debug_name = self.class_instance.__class__.__name__
-            else:
-                self._debug_name = self._dygraph_function.__name__
-        except Exception:
-            self._debug_name = "static_function"
 
     @property
     def is_property(self) -> bool:
@@ -947,7 +937,6 @@ class ASTStaticFunction(StaticFunction[_InputT, _RetT]):
             concrete_program, partial_program_layer = self._program_cache[
                 cache_key
             ]
-        partial_program_layer._debug_name = self._debug_name
         return concrete_program, partial_program_layer
 
     def get_concrete_program_with_cache_key(
@@ -1554,7 +1543,7 @@ class PirPrimHooker(PirPartialProgramLayerHook):
                 backward_length = (
                     len(whole_program.global_block().ops) - forward_end_idx
                 )
-                # decompse forward program
+                # decompose forward program
                 dst_vars = decomposition.decompose(
                     whole_program,
                     src_vars,
@@ -1564,7 +1553,7 @@ class PirPrimHooker(PirPartialProgramLayerHook):
                 new_start_index = (
                     len(whole_program.global_block().ops) - backward_length
                 )
-                # decompse backward program
+                # decompose backward program
                 dst_vars = decomposition.decompose(
                     whole_program,
                     dst_vars,
@@ -1629,7 +1618,7 @@ class ProgramCache:
         self._recent_cache_key = None
 
     def _build_once(self, cache_key):
-        # TODO(Aurelius84): Need a gloabl FLAGS to enable/disable to_prim
+        # TODO(Aurelius84): Need a global FLAGS to enable/disable to_prim
         enable_prim = cache_key.kwargs['build_strategy'].build_cinn_pass
 
         if use_pir_api():

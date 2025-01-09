@@ -123,13 +123,13 @@ class Input:
             low, high = self.input_range
             self.input_min_data = np.random.randint(
                 low, high, size=self.min_input_shape
-            )
+            ).astype(self.input_data_type)
             self.input_optim_data = np.random.randint(
                 low, high, size=self.optim_input_shape
-            )
+            ).astype(self.input_data_type)
             self.input_max_data = np.random.randint(
                 low, high, size=self.max_input_shape
-            )
+            ).astype(self.input_data_type)
         else:
             low, high = self.input_range if self.input_range else (0, 1)
             self.input_min_data = np.random.uniform(
@@ -248,17 +248,20 @@ def convert_to_trt(program, trt_config, scope):
     with paddle.pir_utils.IrGuard():
         min_shape_feed = {}
         max_shape_feed = {}
+        opt_shape_feed = {}
         for i, input_instance in enumerate(trt_config.inputs):
             # get fake inputs
-            min_data, _, max_data = input_instance.generate_input_data()
+            min_data, opt_data, max_data = input_instance.generate_input_data()
             program_with_output = program.list_vars()[-1]
             min_shape_feed[feed_name[i]] = min_data
+            opt_shape_feed[feed_name[i]] = opt_data
             max_shape_feed[feed_name[i]] = max_data
 
             # run warmup for collecting shape
         program = warmup_shape_infer(
             program,
             min_shape_feed=min_shape_feed,
+            opt_shape_feed=opt_shape_feed,
             max_shape_feed=max_shape_feed,
             scope=scope,
         )

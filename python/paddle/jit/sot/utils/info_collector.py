@@ -125,12 +125,14 @@ class SubGraphRelationInfo(StepInfoBase):
         input_shape_infos: list[SubGraphRelationInfo.ConcreteShapeInfo],
         output_shape_infos: list[SubGraphRelationInfo.ConcreteShapeInfo],
         is_first_call: bool,
+        graph_size: int,
     ):
         super().__init__()
         self.subgraph_name = subgraph_name
         self.input_shape_infos = input_shape_infos
         self.output_shape_infos = output_shape_infos
         self.is_first_call = is_first_call
+        self.graph_size = graph_size
 
     @classmethod
     def summary(cls, history: list[Self]) -> str:
@@ -169,7 +171,7 @@ class SubGraphRelationInfo(StepInfoBase):
             subgraph_id = f"subgraph_{i}"
             dot.node(
                 subgraph_id,
-                f"Subgraph {i} ({info.subgraph_name})",
+                f"Subgraph {i} ({info.subgraph_name}, size={info.graph_size})",
                 shape='oval',
                 fillcolor='cyan' if info.is_first_call else None,
                 style='filled' if info.is_first_call else None,

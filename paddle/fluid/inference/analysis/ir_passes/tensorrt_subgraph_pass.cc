@@ -158,7 +158,7 @@ void analysis::TensorRtSubgraphPass::ApplyImpl(
              node->Op()->Type()) != trt_disabled_ops.end()) {
       VLOG(3) << node->Op()->Type().c_str()
 
-              << " is diabled by config in TensorRT";
+              << " is disabled by config in TensorRT";
       return false;
     }
     for (const auto &out_var : node->Op()->OutputNames()) {
@@ -166,7 +166,7 @@ void analysis::TensorRtSubgraphPass::ApplyImpl(
         if (find(trt_disabled_ops.begin(), trt_disabled_ops.end(), var_name) !=
             trt_disabled_ops.end()) {
           VLOG(3) << node->Op()->Type().c_str()
-                  << " is diabled by config in TensorRT";
+                  << " is disabled by config in TensorRT";
           return false;
         }
       }

@@ -303,7 +303,8 @@ void BindTreeIndex(py::module* m) {
       .def("total_node_nums",
            [](TreeIndex& self) { return self.TotalNodeNums(); })
       .def("emb_size", [](TreeIndex& self) { return self.EmbSize(); })
-      .def("get_all_leafs", [](TreeIndex& self) { return self.GetAllLeafs(); })
+      .def("get_all_leaves",
+           [](TreeIndex& self) { return self.GetAllLeaves(); })
       .def("get_nodes",
            [](TreeIndex& self, const std::vector<uint64_t>& codes) {
              return self.GetNodes(codes);

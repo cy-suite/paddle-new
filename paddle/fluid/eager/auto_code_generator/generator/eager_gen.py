@@ -85,6 +85,7 @@ prim_white_list = [
     "reshape_double_grad",
     "take_along_axis_double_grad",
     "index_add_double_grad",
+    "acos_double_grad",
 ]
 
 # white ops list whose kernel can automatically do type promotion.
@@ -693,7 +694,7 @@ LAYOUT_LOGIC_TEMPLATE = """
 """
 CREATE_PLAIN_OPTIONAL_TENSOR_TEMPLATE = """
   paddle::optional<paddle::Tensor> {name}_optional;
-  if({name}.initialized() ||
+  if(({name}.has_allocation()) ||
      ({name}.defined() && {name}.is_dist_tensor() &&
       phi::distributed::NeedComputationClipForPP({name}.impl()))) {name}_optional = paddle::make_optional<paddle::Tensor>({name});
 """
@@ -730,7 +731,7 @@ INPUT_CONTAIN_DIST_TENSOR_TEMPLATE = """
 
 CHECK_BACKWARD_INPLACE_TEMPLATE = """
   bool can_be_inplaced = false;
-  if ({}.initialized()) {{
+  if ({}.has_allocation()) {{
     VLOG(10) << {}.name() << "({}) use_count: " << {}.impl().use_count();
     if ({}.impl().use_count() == 1 || ({}.impl().use_count() == 2 && {}.impl().get() == {}.impl().get())) {{
       if ({}.is_dense_tensor() && !std::dynamic_pointer_cast<phi::DenseTensor>({}.impl())->meta().is_contiguous()) {{
@@ -2575,8 +2576,8 @@ class DygraphNodeGenerator(DygraphFunctionGeneratorBase):
                         optional_inplace_var_name.append(
                             transformed_tensor_name
                         )
-                tensor_wrapper_intermidiate_tensor_str = (
-                    f"(&this->{tensor_wrapper_name})->get_intermidiate_tensor()"
+                tensor_wrapper_intermediate_tensor_str = (
+                    f"(&this->{tensor_wrapper_name})->get_intermediate_tensor()"
                 )
                 inplace_check_str += CHECK_BACKWARD_INPLACE_TEMPLATE.format(
                     transformed_tensor_name,
@@ -2586,7 +2587,7 @@ class DygraphNodeGenerator(DygraphFunctionGeneratorBase):
                     transformed_tensor_name,
                     transformed_tensor_name,
                     transformed_tensor_name,
-                    tensor_wrapper_intermidiate_tensor_str,
+                    tensor_wrapper_intermediate_tensor_str,
                     transformed_tensor_name,
                     transformed_tensor_name,
                     transformed_tensor_name,
@@ -2736,7 +2737,7 @@ class DygraphNodeGenerator(DygraphFunctionGeneratorBase):
                 grad_api_out_args_list.append(f"api_output_{out_index}")
                 fwd_positions_list.append(f"{fwd_position}")
             if inplace_grad_input_str in optional_inplace_var_name:
-                optional_inplace_str = 'VLOG(6) << "No Inplace should happend for wrappered input: {inplace_grad_input_str}";'
+                optional_inplace_str = 'VLOG(6) << "No Inplace should happened for wrappered input: {inplace_grad_input_str}";'
             else:
                 optional_inplace_str = f"""if (api_output_{out_index} != nullptr && can_be_inplaced) {{
       egr::EagerUtils::HandleViewBetweenInputAndOutput({inplace_grad_input_str}, api_output_{out_index});
@@ -2948,7 +2949,7 @@ if (paddle::prim::PrimCommonUtils::IsEagerPrimEnabled() && !need_skip) {{
             if IsPlainTensorType(rtype):
                 output_autograd_meta = f"""
   auto& {transformed_tensor_name} = returns[{pos}][0];
-  egr::AutogradMeta* {output_autograd_meta_name} = returns[{pos}][0].initialized() ? egr::EagerUtils::autograd_meta(&{transformed_tensor_name}) : nullptr;
+  egr::AutogradMeta* {output_autograd_meta_name} = returns[{pos}][0].has_allocation() ? egr::EagerUtils::autograd_meta(&{transformed_tensor_name}) : nullptr;
   if ({output_autograd_meta_name}) {output_autograd_meta_name}->SetStopGradient(false);
 """
 

@@ -29,7 +29,7 @@ bool IsBlockForAllEqual(const ForTreeNode& first, const ForTreeNode& second) {
                                const ForTreeNode& second) -> bool {
     const ir::Expr lhs = first.val->extent();
     const ir::Expr rhs = second.val->extent();
-    if (cinn::common::AutoSimplify(ir::Sub::Make(lhs, rhs)) != ir::Expr(0)) {
+    if (lhs != rhs) {
       return false;
     }
     return true;

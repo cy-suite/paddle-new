@@ -17,11 +17,11 @@ import hashlib
 import logging
 
 import numpy as np
-import tensorrt as trt
 
-# init tensorrt plugin
-trt_plugin_lib = ctypes.CDLL('libnvinfer_plugin.so')
-trt_plugin_lib.initLibNvInferPlugins(None, "")
+import paddle
+
+paddle.base.core.register_paddle_plugin()
+import tensorrt as trt
 
 import paddle
 from paddle import pir
@@ -83,6 +83,9 @@ class PaddleToTensorRTConverter:
         self.input_info = {}
         self.trt_output_value_map = {}
         self.engine_num = 0
+        # init tensorrt plugin
+        trt_plugin_lib = ctypes.CDLL('libnvinfer_plugin.so')
+        trt_plugin_lib.initLibNvInferPlugins(None, "")
 
     def find_graph_inputs_outputs(self, group_op):
         operations = next(iter(group_op.blocks())).ops
@@ -295,7 +298,6 @@ class PaddleToTensorRTConverter:
                     max_shape = get_value_shape_range_info(
                         value, False, paddle.base.core.ShapeMode.kMAX
                     )
-
                     if trt_input.is_shape_tensor:
                         min_value = get_value_shape_range_info(
                             value, True, paddle.base.core.ShapeMode.kMIN

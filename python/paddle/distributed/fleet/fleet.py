@@ -239,7 +239,7 @@ class Fleet:
                 is False.
             strategy (DistributedStrategy): Extra properties for distributed training.
                 For details, please refer to paddle.distributed.fleet.DistributedStrategy. Default: None.
-            log_level (Integer, String, optional): A ``Integer`` or ``String`` Variable determining how hight
+            log_level (Integer, String, optional): A ``Integer`` or ``String`` Variable determining how height
                 the logging level is. Default is "INFO".
 
         Returns:

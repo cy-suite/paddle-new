@@ -25,7 +25,7 @@ class FatalClass {
 
 void throw_exception_in_func() {
   FatalClass test_case;
-  PADDLE_THROW(::common::errors::External("throw excption in func"));
+  PADDLE_THROW(::common::errors::External("throw exception in func"));
 }
 
 void terminate_in_func() { FatalClass test_case; }

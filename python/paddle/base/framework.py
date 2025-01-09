@@ -4034,7 +4034,7 @@ def check_if_to_static_diff_with_dygraph(op_type, inplace_map, outputs):
                             and inplace_map.get("Input", None) == "Out"
                         ):
                             raise ValueError(
-                                f"Sorry about what's happend. In to_static mode, {op_type}'s output variable {k} is a viewed Tensor in dygraph. This will result in inconsistent calculation behavior between dynamic and static graphs. If you are sure it is safe, you can call with paddle.base.framework._stride_in_no_check_dy2st_diff() in your safe code block."
+                                f"Sorry about what's happened. In to_static mode, {op_type}'s output variable {k} is a viewed Tensor in dygraph. This will result in inconsistent calculation behavior between dynamic and static graphs. If you are sure it is safe, you can call with paddle.base.framework._stride_in_no_check_dy2st_diff() in your safe code block."
                             )
 
 

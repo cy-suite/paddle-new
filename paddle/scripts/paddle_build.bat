@@ -201,7 +201,7 @@ if "%WITH_SCCACHE%"=="ON" (
     sccache --stop-server 2> NUL
     del %SCCACHE_ROOT%\sccache_log.txt
 
-    :: Localy storage on windows
+    :: Locally storage on windows
     if not exist %SCCACHE_ROOT% mkdir %SCCACHE_ROOT%
     set SCCACHE_DIR=%SCCACHE_ROOT%\.cache
 

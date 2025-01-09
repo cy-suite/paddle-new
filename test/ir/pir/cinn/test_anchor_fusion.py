@@ -66,7 +66,7 @@ class TestAnchorFusion(unittest.TestCase):
         if kernel_num is not None:
             utils.check_jit_kernel_number(static_compute, kernel_num)
 
-    def test_identiy_iters_fusion(self):
+    def test_identity_iters_fusion(self):
         #        T
         #      / | \
         #     /  |  \

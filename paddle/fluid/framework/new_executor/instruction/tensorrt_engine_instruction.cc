@@ -434,7 +434,7 @@ void TensorRTEngineInstruction::BindInputTensor(
           "have >0 elements, but now have %d elements. "
           "It's likely that this tensor is connected to a Concat op inside "
           "a trt-subgraph, "
-          "try to ues API to forbid this op into trt-subgraph.",
+          "try to use API to forbid this op into trt-subgraph.",
           input_name,
           input_tensor.numel()));
 

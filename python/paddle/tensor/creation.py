@@ -499,7 +499,7 @@ def logspace(
     name: str | None = None,
 ) -> paddle.Tensor:
     r"""
-    Return fixed number of logarithmical-evenly spaced values within the interval \
+    Return fixed number of logarithmically-evenly spaced values within the interval \
     :math:`[base^{start}, base^{stop}]`.
 
     Notes:
@@ -523,7 +523,7 @@ def logspace(
 
     Returns:
         Tensor: The output data type will be float32, float64. The 1-D tensor with \
-        fixed number of logarithmical-evenly spaced values, the data shape of this \
+        fixed number of logarithmically-evenly spaced values, the data shape of this \
         tensor is :math:`[num]`. If the :attr:`num` is set 1, the output tensor \
         just has the value with exponential of :attr:`start` with base :attr:`base`.
 
@@ -1089,7 +1089,7 @@ def fill_constant(
 
         if out.dtype != dtype:
             raise TypeError(
-                "Required out.dtype == dtype if specifying out, but recevied f{out.dtype} != f{dtype}"
+                "Required out.dtype == dtype if specifying out, but received f{out.dtype} != f{dtype}"
             )
         out = _C_ops.full_(out, shape, value, dtype, place)
         out.stop_gradient = True

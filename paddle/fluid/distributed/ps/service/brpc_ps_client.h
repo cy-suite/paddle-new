@@ -73,7 +73,7 @@ class DownpourPsClientService : public PsService {
         client_id,
         (_client->_client_id),
         common::errors::PreconditionNotMet(
-            "Wrong request client's id. Expect to match self. But recieved "
+            "Wrong request client's id. Expect to match self. But received "
             "request client's id = %lu and self = %lu.",
             client_id,
             (_client->_client_id)));

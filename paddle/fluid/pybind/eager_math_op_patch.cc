@@ -176,9 +176,9 @@ void SetDevice(phi::Place place) {
 
 // scalar func only support add, radd, sub, rsub, mul, rmul, div, truediv.
 // this function will update gradually.
-paddle::Tensor CallScalarFuction(const paddle::Tensor& self_tensor,
-                                 double other,
-                                 std::string op_type) {
+paddle::Tensor CallScalarFunction(const paddle::Tensor& self_tensor,
+                                  double other,
+                                  std::string op_type) {
   paddle::Tensor ret;
   // scale_ad_func need sclar and bias with float type.
   if (op_type == "add" || op_type == "radd") {
@@ -269,7 +269,7 @@ static PyObject* tensor__add__method(TensorObject* self,
     double other = CastPyArg2Double(other_obj, "__add__", 0);
     {
       eager_gil_scoped_release guard;
-      ret = CallScalarFuction(self_tensor, other, "add");
+      ret = CallScalarFunction(self_tensor, other, "add");
     }
     return ToPyObject(ret);
   } else if (PyComplex_Check(other_obj)) {
@@ -364,7 +364,7 @@ static PyObject* tensor__sub__method(TensorObject* self,
     double other = CastPyArg2Double(other_obj, "__sub__", 0);
     {
       eager_gil_scoped_release guard;
-      ret = CallScalarFuction(self_tensor, other, "sub");
+      ret = CallScalarFunction(self_tensor, other, "sub");
     }
 
     return ToPyObject(ret);
@@ -458,7 +458,7 @@ static PyObject* tensor__rsub__method(TensorObject* self,
     double other = CastPyArg2Double(other_obj, "__rsub__", 0);
     {
       eager_gil_scoped_release guard;
-      ret = CallScalarFuction(self_tensor, other, "rsub");
+      ret = CallScalarFunction(self_tensor, other, "rsub");
     }
     return ToPyObject(ret);
   } else if (PyComplex_Check(other_obj)) {
@@ -552,7 +552,7 @@ static PyObject* tensor__mul__method(TensorObject* self,
     double other = CastPyArg2Double(other_obj, "__mul__", 0);
     {
       eager_gil_scoped_release guard;
-      ret = CallScalarFuction(self_tensor, other, "mul");
+      ret = CallScalarFunction(self_tensor, other, "mul");
     }
     return ToPyObject(ret);
   } else if (PyComplex_Check(other_obj)) {
@@ -649,7 +649,7 @@ static PyObject* tensor__div__method(TensorObject* self,
     double other = CastPyArg2Double(other_obj, "__div__", 0);
     {
       eager_gil_scoped_release guard;
-      ret = CallScalarFuction(self_tensor, other, "div");
+      ret = CallScalarFunction(self_tensor, other, "div");
     }
     return ToPyObject(ret);
   } else if (PyComplex_Check(other_obj)) {
@@ -1808,7 +1808,7 @@ static PyObject* tensor__pow__method(TensorObject* self,
     double other = CastPyArg2Double(other_obj, "__pow__", 0);
     {
       eager_gil_scoped_release guard;
-      ret = CallScalarFuction(self_tensor, other, "pow");
+      ret = CallScalarFunction(self_tensor, other, "pow");
     }
     return ToPyObject(ret);
   } else if (PyComplex_Check(other_obj)) {

@@ -947,3 +947,13 @@ def roll_converter(network, paddle_op, inputs):
             )
 
     return layer.get_output(0)
+
+
+@converter_registry.register("pd_op.numel", trt_version="8.x")
+def numel_converter(network, paddle_op, inputs):
+    input_tensor = inputs[0]
+    shape_tensor = network.add_shape(input_tensor).get_output(0)
+    layer = network.add_reduce(
+        shape_tensor, trt.ReduceOperation.PROD, axes=1, keep_dims=False
+    )
+    return layer.get_output(0)

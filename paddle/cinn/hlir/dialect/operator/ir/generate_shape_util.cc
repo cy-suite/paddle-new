@@ -666,7 +666,7 @@ bool MakeGenerateShapeOpAttribute(
       }
     }
     if (!has_symbol_binding) {
-      LOG(WARNING) << "no symbol binding found for dim expr: " << symbol_name;
+      VLOG(2) << "no symbol binding found for dim expr: " << symbol_name;
       return false;
     }
   }

@@ -180,7 +180,8 @@ std::vector<paddle::Tensor> RunBackward(
 
     // copy grad tensor since we should totally run grad without affect forward
     // value
-    if (!grad_tensors.empty() && grad_tensors[i].initialized()) {
+    if (!grad_tensors.empty() &&
+        (grad_tensors[i].defined() && grad_tensors[i].has_allocation())) {
       PADDLE_ENFORCE(
           grad_tensors.size() == tensors.size(),
           common::errors::Fatal(
@@ -354,9 +355,10 @@ std::vector<paddle::Tensor> RunBackward(
         paddle::Tensor& grad_output_tensor = grad_output_tensors[i][j];
 
         if ((!grad_output_tensor.defined() ||
-             !grad_output_tensor.initialized())) {
+             !grad_output_tensor.has_allocation())) {
           VLOG(7) << "We get grad_output_tensor with slot: " << i
-                  << ", rank: " << j << " as uninitialized or undefined tensor";
+                  << ", rank: " << j
+                  << " as undefined tensor or without allocation.";
         }
 
         VLOG(7) << "Get Edge and grad_output_tensor with slot: " << i

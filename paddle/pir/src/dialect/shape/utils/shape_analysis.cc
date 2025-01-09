@@ -129,6 +129,9 @@ InferSymbolicShapeContext::GetShapeOrDataForValue(Value val) const {
     return null_shape_or_data;
   }
   if (!HasShapeOrDataForValue(val)) {
+    VLOG(3) << "InferShapeOrDataForValue,  defining_op: "
+            << val.defining_op()->name() << " id:" << val.defining_op()->id()
+            << " value id: " << val.impl()->id();
     PADDLE_THROW(common::errors::Fatal(
         "Fail to GetShapeOrDataForValue on InferSymbolicShape!"));
   }

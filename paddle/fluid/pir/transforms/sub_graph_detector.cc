@@ -262,15 +262,16 @@ bool HasSinkRoute(const SubGraphPtr& source, const SubGraphPtr& target) {
   std::unordered_set<SubGraphPtr> visited;
   std::queue<SubGraphPtr> queue;
   queue.push(source);
+  visited.insert(source);
   while (!queue.empty()) {
     SubGraphPtr cur = queue.front();
     queue.pop();
-    visited.insert(cur);
     if (cur == target) return true;
     if (cur->topo_index > target->topo_index) continue;
     for (const auto& subgraph : cur->downstreams) {
       if (visited.count(subgraph)) continue;
       queue.push(subgraph);
+      visited.insert(subgraph);
     }
   }
   return false;
@@ -281,15 +282,16 @@ bool HasLiftRoute(const SubGraphPtr& source, const SubGraphPtr& target) {
   std::unordered_set<SubGraphPtr> visited;
   std::queue<SubGraphPtr> queue;
   queue.push(source);
+  visited.insert(source);
   while (!queue.empty()) {
     SubGraphPtr cur = queue.front();
     queue.pop();
-    visited.insert(cur);
     if (cur == target) return true;
     if (source->topo_index < target->topo_index) continue;
     for (const auto& subgraph : cur->upstreams) {
       if (visited.count(subgraph)) continue;
       queue.push(subgraph);
+      visited.insert(subgraph);
     }
   }
   return false;
@@ -459,13 +461,14 @@ void SubgraphDetector::MergeSource2Target(const SubGraphPtr& source,
 
 SubgraphDetector::SubgraphDetector(pir::Block* block,
                                    const OpClassifier& classifier) {
-  // init sort_ops_ in reverse topo order
-  sort_ops_ = InverselyTopologicalSort(block);
-  // init op2index_ in topo order
+  // init sort_ops_ in reverse topo order and op2index_ in topo order
   int index = 0;
   for (auto& op : *block) {
+    sort_ops_.push_back(&op);
     op2index_[&op] = index++;
   }
+  std::reverse(sort_ops_.begin(), sort_ops_.end());
+
   // construct subgraphs and upstream/downstream relation
   std::vector<SubGraphPtr> subgraph_list;
   for (const auto& op : sort_ops_) {

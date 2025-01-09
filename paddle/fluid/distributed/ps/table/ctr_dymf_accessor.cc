@@ -394,7 +394,7 @@ int CtrDymfAccessor::ParseFromString(const std::string& str, float* value) {
       ret,
       7UL,
       common::errors::InvalidArgument(
-          "Invalid return value. Expect more than 7. But recieved %d.", ret));
+          "Invalid return value. Expect more than 7. But received %d.", ret));
   return ret;
 }
 

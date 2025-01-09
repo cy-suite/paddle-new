@@ -43,6 +43,7 @@ from .utils import (
     get_pp_stage_by_process_mesh,
     get_sub_process_mesh_by_program,
     partition_skip_op_list,
+    update_pylayer_output,
 )
 
 _logger = get_logger(
@@ -404,47 +405,64 @@ def replace_moe_sub_mesh_tensors(op):
             [op_dist_attr.result(out_idx).as_tensor_dist_attr()],
         )
     )
-
+    for val in op.results():
+        if not val.use_empty():
+            update_pylayer_output(val)
     assert all(val.use_empty() for val in op.results())
     op.erase()
 
 
+def remove_sub_block_unused_inputs(op):
+    inputs_size = op.operand_source.num_operands()
+    inputs = [op.operand_source(i) for i in range(inputs_size)]
+    # remove unused inputs
+
+
 class RemovePasses:
+
     @staticmethod
     def remove_other_rank_op_pass(dist_program):
         # pruning op and value not belong to cur rank
-        cur_rank = paddle.distributed.get_rank()
+        def prune_op(block):
+            cur_rank = paddle.distributed.get_rank()
+            for op in block.ops[::-1]:
+                if op.name() == "dist_op.moe_sub_mesh_tensors":
+                    replace_moe_sub_mesh_tensors(op)
+                    continue
+                elif op.name() == "dist_op.moe_global_mesh_tensor":
+                    replace_moe_global_mesh_tensor(op)
+                    continue
+                elif op.name() == "cf.tuple_push":
+                    stack_create_op = op.operand_source(0).get_defining_op()
+                    if stack_create_op.result(2).use_empty():
+                        op.erase()
+                    continue
+                elif op.name() == "cf.yield":
+                    continue
+                elif op.name() == "pd_op.pylayer":
+                    for pylayer_block in list(op.blocks())[::-1]:
+                        prune_op(pylayer_block)
+                    # update pylayer op's inputs
+                    op.as_pylayer_op().update_input()
+                    continue
+                elif op.name() in partition_skip_op_list:
+                    can_delete = True
+                    for val in op.results():
+                        if not val.use_empty():
+                            can_delete = False
+                    if can_delete:
+                        op.erase()
+                    continue
 
-        for op in dist_program.global_block().ops[::-1]:
-            if op.name() == "dist_op.moe_sub_mesh_tensors":
-                replace_moe_sub_mesh_tensors(op)
-                continue
-            elif op.name() == "dist_op.moe_global_mesh_tensor":
-                replace_moe_global_mesh_tensor(op)
-                continue
-            elif op.name() == "cf.tuple_push":
-                stack_create_op = op.operand_source(0).get_defining_op()
-                if stack_create_op.result(2).use_empty():
+                if cur_rank not in op.dist_attr.process_mesh.process_ids:
                     op.erase()
-                continue
-            elif op.name() == "cf.yield":
-                continue
-            elif op.name() in partition_skip_op_list:
-                can_delete = True
-                for val in op.results():
-                    if not val.use_empty():
-                        can_delete = False
-                if can_delete:
+                elif op.name() == "dist_op.reshard":
+                    assert op.result(
+                        0
+                    ).use_empty(), f'There should not have useful dist.reshard op in remove_other_rank_op_pass. but find : {op}'
                     op.erase()
-                continue
 
-            if cur_rank not in op.dist_attr.process_mesh.process_ids:
-                op.erase()
-            elif op.name() == "dist_op.reshard":
-                assert op.result(
-                    0
-                ).use_empty(), f'There should not have useful dist.reshard op in remove_other_rank_op_pass. but find : {op}'
-                op.erase()
+        prune_op(dist_program.global_block())
 
         # merge pd.data ops for
         lr_ops = []

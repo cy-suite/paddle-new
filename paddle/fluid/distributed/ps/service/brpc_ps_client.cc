@@ -1920,7 +1920,7 @@ std::future<int32_t> BrpcPsClient::PushDense(const Region *regions,
                           "Invalid dense size."
                           "Expect the sum of current position and data number "
                           "to be equal to or smaller than the size."
-                          "But recieved current position = %lu, data number = "
+                          "But received current position = %lu, data number = "
                           "%lu, size = %lu.",
                           pos,
                           data_num,

@@ -46,7 +46,7 @@ class ExprMutator : public IRMutator<T> {
     if (expr->is_index()) return;
     IRMutator<T>::Visit(expr, op);
   }
-  void Visit(const IndexExpr *expr, IndexExpr *op) override { return; }
+  void Visit(const IndexExpr *expr, T op) override { return; }
 };
 
 template <typename T>

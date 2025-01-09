@@ -80,7 +80,7 @@ DEFAULT_RECOMPUTABLE_OPS: list[str] = [
     "pd_op.slice",
     "pd_op.squeeze",
     "pd_op.unsqueeze",
-    # "pd_op.transpose",
+    "pd_op.transpose",
     # "pd_op.prod",
     "pd_op.log",
     "pd_op.log1p",
@@ -154,6 +154,10 @@ COMPUTE_INTENSIVE_OPS: list[str] = [
     "pd_op.reduce_",
 ]
 
+IGNORE_OPS: list[str] = [
+    "cf.stack_create",
+]
+
 AGGRESSIVE_RECOMPUTATION = False
 # Restricts the amount of computation recompute can do.
 MAX_DIST_FROM_BW = 3
@@ -195,7 +199,7 @@ class JudgeFusionLoop:
                 for _, value in block.kwargs():
                     defined_values.add(value)
             for block in op.blocks():
-                for inner_op in block.ops():
+                for inner_op in block.ops:
                     _get_used_external_value_impl(
                         defined_values, used_values, inner_op
                     )
@@ -216,23 +220,13 @@ class JudgeFusionLoop:
         def _get_consumer_ops(op):
             consumers = set()
             for result in op.results():
-                for parent_op in result.all_used_ops():
-                    while parent_op is not None:
-                        if (
-                            parent_op.get_parent_block()
-                            == op.get_parent_block()
-                        ):
-                            consumers.add(parent_op)
-                            self.result_value_set.add(result)
-                            break
-                        parent_op = (
-                            parent_op.get_parent_block().parent_op
-                            if parent_op.get_parent_block() is not None
-                            else None
-                        )
+                for parent_op in result.all_used_ops_in_same_block():
+                    if parent_op is not None:
+                        consumers.add(parent_op)
+                        self.result_value_set.add(result)
             return consumers
 
-        def _get_producer_ops_recursivly(root):
+        def _get_producer_ops_recursively(root):
             visited = set()
             queue = deque()
             queue.append(root)
@@ -246,7 +240,7 @@ class JudgeFusionLoop:
                     visited.add(new_op)
                     queue.append(new_op)
 
-        def _get_consumer_ops_recursivly(root):
+        def _get_consumer_ops_recursively(root):
             visited = set()
             queue = deque()
             queue.append(root)
@@ -262,8 +256,8 @@ class JudgeFusionLoop:
 
         for op in self.ops:
             if op.name() in self.unrecomputable_ops:
-                _get_producer_ops_recursivly(op)
-                _get_consumer_ops_recursivly(op)
+                _get_producer_ops_recursively(op)
+                _get_consumer_ops_recursively(op)
 
     def _has_unfusible_op_on_any_path(self, op1, op2):
         no_unfusible_op_on_path = (
@@ -431,6 +425,15 @@ def auto_recompute(
 
     fusible_ops = recomputable_ops | set(random_ops)
 
+    # 1.4  Model pir graph. Convert the pir calculation graph into a networkx calculation graph.
+    outputs = backward_utils.ValueSet(outputs)
+    inputs = backward_utils.ValueSet(inputs)
+    value_id_dict = {}
+    nx_graph = nx.DiGraph()
+
+    judge_fusion_loop = JudgeFusionLoop(program, unrecomputable_ops)
+    forward_ops = set(program.global_block().ops[: fwd_op_end_idx + 1])
+
     def _get_bw_no_need_buffer_values(program, backward_op_start_idx):
         need_buffer_values = backward_utils.ValueSet()
         all_values = backward_utils.ValueSet()
@@ -459,7 +462,7 @@ def auto_recompute(
         while len(cur_value_nodes) > 0:
             cur_value_node = cur_value_nodes.pop()
             users = find_value_node_users(
-                cur_value_node, bw_no_need_buffer_values, True
+                cur_value_node, bw_no_need_buffer_values, True, forward_ops
             )
             for user in users:
                 if user not in required_fw_value_nodes and not _is_fusible(
@@ -477,7 +480,7 @@ def auto_recompute(
         if value_node in placeholder_value_nodes:
             return True
         users = find_value_node_users(
-            value_node, bw_no_need_buffer_values, True
+            value_node, bw_no_need_buffer_values, True, forward_ops
         )
         return not all(_is_fusible(value_node, user) for user in users)
 
@@ -527,15 +530,6 @@ def auto_recompute(
             inputs_size = sum(cal_value_node_size(i) for i in inputs)
             return output_size * 4 < inputs_size
 
-    # 1.4  Model pir graph. Convert the pir calculation graph into a networkx calculation graph.
-    outputs = backward_utils.ValueSet(outputs)
-    inputs = backward_utils.ValueSet(inputs)
-    value_id_dict = {}
-    nx_graph = nx.DiGraph()
-
-    judge_fusion_loop = JudgeFusionLoop(program, unrecomputable_ops)
-    forward_ops = set(program.global_block().ops[: fwd_op_end_idx + 1])
-
     for value_node in (
         required_fw_value_nodes
         | required_bw_value_nodes
@@ -547,9 +541,15 @@ def auto_recompute(
         if value_node.get_defining_op().name() == "builtin.combine":
             continue
 
-        if len(value_node.all_used_ops()) == 1 and value_node.all_used_ops()[
-            0
-        ].name() in ["builtin.split", "builtin.slice"]:
+        if value_node.get_defining_op().name() in IGNORE_OPS:
+            continue
+
+        if len(
+            value_node.all_used_ops_in_same_block()
+        ) == 1 and value_node.all_used_ops_in_same_block()[0].name() in [
+            "builtin.split",
+            "builtin.slice",
+        ]:
             continue
 
         if value_node in required_bw_value_nodes:
@@ -604,7 +604,7 @@ def auto_recompute(
         value_id_dict[value_node.id] = value_node
 
         users = find_value_node_users(
-            value_node, bw_no_need_buffer_values, True
+            value_node, bw_no_need_buffer_values, True, forward_ops
         )
         for user in users:
             DebugPrint(
@@ -617,7 +617,7 @@ def auto_recompute(
             nx_graph.add_edge(
                 value_node.id + "_out", user.id + "_in", capacity=math.inf
             )
-        for user in value_node.all_used_ops():
+        for user in value_node.all_used_ops_in_same_block():
             if user in forward_ops:
                 if judge_fusion_loop._has_unfusible_op_on_any_path(
                     value_node.get_defining_op(), user
@@ -678,7 +678,9 @@ def auto_recompute(
     )
     DebugPrint("program after recompute:", program_after_recompute)
     end_time = time.time()
-    logging.info(
+    logger = logging.getLogger("auto-recompute")
+    logger.setLevel(logging.INFO)
+    logger.info(
         f"Time of auto recompute program: ***** [ {end_time - start_time} ] ***** seconds."
     )
     return program_after_recompute, fwd_op_end_idx_after_recompute
@@ -724,6 +726,11 @@ def partition_joint_graph(
         fwd_op_end_idx,
         backward_op_start_idx,
     )
+    DebugPrint("saved values: ")
+    DebugPrint([f"({v}, {v.get_defining_op().id()})" for v in saved_values])
+    DebugPrint("mid values: ")
+    DebugPrint([f"({v}, {v.get_defining_op().id()})" for v in mid_hold_values])
+
     mem = 0
     for mid in mid_hold_values:
         mem += cal_value_node_size(mid)
@@ -925,38 +932,53 @@ def classify_value_node(program, grad_outputs, fwd_op_end_idx):
 
 # Sometimes we need to discard no_need_buffer values because they‘re not REAL tensor users.
 def find_value_node_users(
-    value_node, bw_no_need_buffer_values={}, without_no_need_buffer=False
+    value_node,
+    bw_no_need_buffer_values={},
+    without_no_need_buffer=False,
+    forward_ops={},
 ):
     '''
     Find all the value nodes which use the same value node to be computed.
     '''
     users = backward_utils.ValueSet()
-    for op in value_node.all_used_ops():
+    ops = value_node.all_used_ops_in_same_block()
+    if without_no_need_buffer:
+        if value_node in bw_no_need_buffer_values:
+            ops = [op for op in ops if op in forward_ops]
+    for op in ops:
         if op.name() == "builtin.combine":
             combine_result = op.results()[0]
-            for combine_res_used_op in combine_result.all_used_ops():
+            for (
+                combine_res_used_op
+            ) in combine_result.all_used_ops_in_same_block():
                 results = combine_res_used_op.results()
                 for result in results:
                     if len(
-                        result.all_used_ops()
-                    ) == 1 and result.all_used_ops()[0].name() in [
+                        result.all_used_ops_in_same_block()
+                    ) == 1 and result.all_used_ops_in_same_block()[
+                        0
+                    ].name() in [
                         "builtin.split",
                         "builtin.slice",
                     ]:
-                        split_results = result.all_used_ops()[0].results()
+                        split_results = result.all_used_ops_in_same_block()[
+                            0
+                        ].results()
                         users |= backward_utils.ValueSet(split_results)
                     else:
                         users.add(result)
         else:
-            if without_no_need_buffer:
-                if value_node in bw_no_need_buffer_values:
-                    continue
             results = op.results()
             for result in results:
-                if len(result.all_used_ops()) == 1 and result.all_used_ops()[
-                    0
-                ].name() in ["builtin.split", "builtin.slice"]:
-                    split_results = result.all_used_ops()[0].results()
+                if len(
+                    result.all_used_ops_in_same_block()
+                ) == 1 and result.all_used_ops_in_same_block()[0].name() in [
+                    "builtin.split",
+                    "builtin.slice",
+                ]:
+                    split_results = result.all_used_ops_in_same_block()[
+                        0
+                    ].results()
                     users |= backward_utils.ValueSet(split_results)
                 else:
                     users.add(result)
@@ -1034,7 +1056,7 @@ def cal_value_nodes_dist_to_backward(all_ops, required_fw_value_nodes):
             continue
         op_results = op.results()
         for op_result in op_results:
-            used_ops = op_result.all_used_ops()
+            used_ops = op_result.all_used_ops_in_same_block()
             if len(used_ops) == 1 and used_ops[0].name() in [
                 "builtin.split",
                 "builtin.slice",
@@ -1056,12 +1078,14 @@ def all_used_op_consider_combine(program, value):
     def filter_unused_combine(op):
         if (
             op.name() == "builtin.combine"
-            and len(op.result(0).all_used_ops()) == 0
+            and len(op.result(0).all_used_ops_in_same_block()) == 0
         ):
             return False
         return True
 
-    return list(filter(filter_unused_combine, value.all_used_ops()))
+    return list(
+        filter(filter_unused_combine, value.all_used_ops_in_same_block())
+    )
 
 
 def analyze_mid_hold_values(
@@ -1085,13 +1109,14 @@ def analyze_mid_hold_values(
                 and result not in outputs
                 and result not in inputs
                 and result not in no_need_buffer_values
+                and op.name() not in IGNORE_OPS
             ):
                 mid_hold_values.add(result)
     return mid_hold_values
 
 
 def get_first_backward_use_op(fwd_op, backward_ops):
-    for user_op in fwd_op.results()[0].all_used_ops():
+    for user_op in fwd_op.results()[0].all_used_ops_in_same_block():
         if user_op in backward_ops:
             return user_op
 

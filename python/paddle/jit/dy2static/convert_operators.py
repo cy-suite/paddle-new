@@ -725,7 +725,7 @@ def convert_shape(x):
     #  (1) if x.shape contains -1, such as [2, -1, 64], returns [2, var, 64],
     #      where var = paddle.shape(x)[1]
 
-    #  (2) if x.shape does not contains -1, return lsit(x.shape) directly
+    #  (2) if x.shape does not contains -1, return list(x.shape) directly
 
     if isinstance(x, (Variable, Value)):
         values = list(x.shape)
