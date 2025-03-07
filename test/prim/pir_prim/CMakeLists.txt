@@ -33,6 +33,7 @@ foreach(target ${TEST_PRIM_PURE_PIR_CASES})
     ENVS
     GLOG_v=1
     FLAGS_enable_pir_api=true
+    FLAGS_comp_skip_default_ops=0
     FLAGS_prim_enable_dynamic=true)
 endforeach()
 
@@ -53,6 +54,7 @@ foreach(target ${TEST_PRIM_DYNAMIC_SHAPE_BACKWARD_PIR_CASES})
     GLOG_v=1
     FLAGS_prim_vjp_skip_default_ops=0
     FLAGS_enable_pir_api=true
+    FLAGS_comp_skip_default_ops=0
     FLAGS_prim_enable_dynamic=true)
 endforeach()
 
@@ -82,8 +84,7 @@ if(WITH_CINN)
       FLAGS_prim_check_ops=true
       FLAGS_enable_pir_api=true
       FLAGS_prim_enable_dynamic=true
-      FLAGS_prim_vjp_skip_default_ops=false
-      FLAGS_pir_apply_shape_optimization_pass=1)
+      FLAGS_prim_vjp_skip_default_ops=false)
     set_tests_properties(${target} PROPERTIES LABELS "RUN_TYPE=CINN")
   endforeach()
 endif()

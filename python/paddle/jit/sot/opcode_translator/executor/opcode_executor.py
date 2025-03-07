@@ -24,18 +24,23 @@ import traceback
 import types
 from dataclasses import dataclass
 from itertools import chain
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
+import paddle
 from paddle.jit.utils import OrderedSet
 
 from ...profiler import EventGuard, event_register
 from ...psdb import NO_BREAKGRAPH_CODES
 from ...utils import (
     ENV_MIN_GRAPH_SIZE,
+    ENV_SOT_FORCE_FALLBACK_SIR_IDS,
     BreakGraphError,
+    BuiltinFunctionBreak,
     FallbackError,
     InnerError,
     SotUndefinedVar,
+    UnsupportedIteratorBreak,
+    UnsupportedOperationBreak,
     get_static_function,
     is_comprehensive_name,
     log,
@@ -64,7 +69,6 @@ from .dispatch_functions import (
     operator_not_in,
 )
 from .dispatcher import Dispatcher
-from .function_graph import FunctionGraph
 from .instr_flag import (
     CALL_FUNCTION_EX_FLAG as CFE,
     CONVERT_VALUE_FLAG as CV,
@@ -108,7 +112,10 @@ from .variables import (
     VariableFactory,
 )
 
-SUPPORT_COMPARE_OP = {
+if TYPE_CHECKING:
+    from .function_graph import CompileGraphResult, FunctionGraph
+
+COMPARE_OP_NAME_TO_FN = {
     ">": operator.gt,
     "<": operator.lt,
     ">=": operator.ge,
@@ -181,7 +188,6 @@ def tos_inplace_op_wrapper(fn: Callable):
         res = BuiltinVariable(fn, graph=self._graph, tracker=DanglingTracker())(
             *args
         )
-        res.debug_name = args[0].debug_name
         self.stack.push(res)
 
     return inner
@@ -317,6 +323,34 @@ def fallback_when_occur_error(fn: Callable):
     return inner
 
 
+def parse_force_fallback_sir_ids() -> set[int]:
+    ids_string = ENV_SOT_FORCE_FALLBACK_SIR_IDS.get()
+    if not ids_string:
+        return set()
+    ids = set()
+    for comma_sep_part in ids_string.split(","):
+        comma_sep_part = comma_sep_part.strip()
+        range_parts = comma_sep_part.split("-")
+        if len(range_parts) == 1:
+            ids.add(int(comma_sep_part))
+        else:
+            ids |= set(range(int(range_parts[0]), int(range_parts[1]) + 1))
+    return ids
+
+
+def need_fallback(compile_graph_result: CompileGraphResult) -> bool:
+    graph_fn, (statement_ir, _, _) = compile_graph_result
+
+    assert statement_ir.name[:4] == "SIR_"
+    sir_id = int(statement_ir.name[4:])
+    if (
+        graph_fn.graph_size() < ENV_MIN_GRAPH_SIZE.get()
+        or sir_id in parse_force_fallback_sir_ids()
+    ):
+        return True
+    return False
+
+
 class OpcodeExecutorBase:
     """
     Base class for executing opcode instructions.
@@ -416,16 +450,6 @@ class OpcodeExecutorBase:
         Args:
             result: The execution result.
             instr: The jump instruction.
-
-        Raises:
-            NotImplementedError: If the method is not implemented.
-
-        """
-        raise NotImplementedError
-
-    def transform(self):
-        """
-        Abstract method need to be implemented to symbolic translate each instruction.
 
         Raises:
             NotImplementedError: If the method is not implemented.
@@ -738,22 +762,6 @@ class OpcodeExecutorBase:
 
     def binary_subscr_operation(self, key, container, opname):
         assert isinstance(key, VariableBase)
-        # TODO(xiongkun): getitem / getattr support key and attr as variable.
-        if isinstance(key, TensorVariable) and isinstance(
-            container, TensorVariable
-        ):
-            # NOTE(xiongkun): tensor[tensor] should support.
-            output = self._graph.call_tensor_method(
-                "__getitem__", container, key
-            )
-            self.stack.push(output)
-            return
-
-        if isinstance(key, TensorVariable):
-            raise BreakGraphError(
-                f"Key is a TensorVariable in {opname}, {container}[{key}]"
-            )
-
         result = BuiltinVariable(
             operator.getitem, self._graph, DanglingTracker()
         )(container, key)
@@ -800,7 +808,9 @@ class OpcodeExecutorBase:
     def LOAD_SUPER_ATTR(self, instr: Instruction):
         # This bytecode is for Python 3.12+, and it will break graph in Python 3.11-.
         # We align it's behavior with Python 3.11-.
-        raise BreakGraphError("call super is not supported")
+        raise BreakGraphError(
+            BuiltinFunctionBreak(reason_str="call super is not supported")
+        )
 
     def LOAD_CONST(self, instr: Instruction):
         var = self._co_consts[instr.arg]
@@ -870,7 +880,9 @@ class OpcodeExecutorBase:
             getattr, graph=self._graph, tracker=DanglingTracker()
         )(obj, method_name_var)
 
-        if isinstance(method, MethodVariable) and "__getattr__" not in dir(
+        if isinstance(
+            method, MethodVariable
+        ) and not paddle.base.libpaddle.has_custom_getattro(
             method.bound_instance.get_py_type()
         ):
             # bound method or the class override the __getattr__
@@ -922,13 +934,11 @@ class OpcodeExecutorBase:
         """
         var = self.stack.pop()
         name = self._code.co_varnames[instr.arg]
-        var.debug_name = name
         self._locals[name] = var
 
     def STORE_GLOBAL(self, instr: Instruction):
         var = self.stack.pop()
         name = self._code.co_names[instr.arg]
-        var.debug_name = name
         self._globals.set(name, var)
 
     def DELETE_GLOBAL(self, instr: Instruction):
@@ -957,20 +967,14 @@ class OpcodeExecutorBase:
 
     def store_subscr_operation(self, key, container, value, opname):
         assert isinstance(key, VariableBase)
-        self._graph.add_global_guarded_variable(key)
-        if isinstance(key, TensorVariable):
-            raise BreakGraphError(
-                f"Key is a TensorVariable in {opname}, {container}[{key}] = {value}"
-            )
-        # TODO(xiongkun): support tensor[tensor] = tensor, dy2static is not the same with dygraph.
-        container[key.get_py_value()] = value
-        value.debug_name = f"{container.debug_name}[{key.debug_name}]"
+        BuiltinVariable(operator.setitem, self._graph, DanglingTracker())(
+            container, key, value
+        )
 
     def DELETE_SUBSCR(self, instr: Instruction):
         key = self.stack.pop()
         container = self.stack.pop()
         assert isinstance(key, VariableBase)
-        self._graph.add_global_guarded_variable(key)
         BuiltinVariable(operator.delitem, self._graph, DanglingTracker())(
             container, key
         )
@@ -1063,7 +1067,8 @@ class OpcodeExecutorBase:
         assert map_size + 1 <= len(
             self.stack
         ), f"OpExecutor want BUILD_CONST_KEY_MAP with size {map_size} + 1, but current stack do not have enough elems."
-        keys = self.stack.pop().get_items()
+        keys = self.stack.pop().get_wrapped_items()
+        keys = list(keys) if isinstance(keys, tuple) else keys
         assert len(keys) == map_size
         values = self.stack.pop_n(map_size)
         self.stack.push(self.build_map(keys, values))
@@ -1078,7 +1083,11 @@ class OpcodeExecutorBase:
             if not isinstance(
                 item, (TupleVariable, ListVariable, RangeVariable)
             ):
-                raise BreakGraphError(f"{type(item)} not support unpack")
+                raise BreakGraphError(
+                    UnsupportedOperationBreak(
+                        reason_str=f"{type(item)} not support unpack"
+                    )
+                )
             retval.extend(item.get_iter().to_list())
 
         if instr.opname in {
@@ -1297,9 +1306,17 @@ class OpcodeExecutorBase:
             kwargs = {}
 
         args_variable = self.stack.pop()
-        assert isinstance(args_variable, (TupleVariable, ListVariable))
-        args = args_variable.get_wrapped_items()
-
+        args_iter = args_variable.get_iter()
+        assert isinstance(
+            args_iter, IterVariable
+        ), f"args_iter should be IterVariable, but got {args_iter}"
+        if not isinstance(args_iter, SequenceIterVariable):
+            raise BreakGraphError(
+                UnsupportedOperationBreak(
+                    reason_str="CALL_FUNCTION_EX only supports SequenceIterVariable for varargs"
+                )
+            )
+        args = args_iter.to_list()
         if sys.version_info >= (3, 11) and CALL_METHOD_LAYOUT_NULL_AFTER_VALUE:
             null = self.stack.pop()
             assert isinstance(null, NullVariable)
@@ -1343,7 +1360,7 @@ class OpcodeExecutorBase:
         right, left = self.stack.pop(), self.stack.pop()
         self.stack.push(
             BuiltinVariable(
-                SUPPORT_COMPARE_OP[op], self._graph, DanglingTracker()
+                COMPARE_OP_NAME_TO_FN[op], self._graph, DanglingTracker()
             )(left, right)
         )
 
@@ -1362,7 +1379,7 @@ class OpcodeExecutorBase:
         op = "is" if instr.arg == 0 else "is not"
         self.stack.push(
             BuiltinVariable(
-                SUPPORT_COMPARE_OP[op], self._graph, DanglingTracker()
+                COMPARE_OP_NAME_TO_FN[op], self._graph, DanglingTracker()
             )(left, right)
         )
 
@@ -1494,7 +1511,7 @@ class OpcodeExecutorBase:
             kw_default_args_variable = self.stack.pop()
             assert isinstance(kw_default_args_variable, DictVariable)
             related_list.append(kw_default_args_variable)
-            kw_defaults = kw_default_args_variable.get_py_value()
+            kw_defaults = kw_default_args_variable.get_wrapped_items()
 
         if flag & MF.MF_HAS_DEFAULTS:
             '''
@@ -1579,7 +1596,7 @@ class OpcodeExecutorBase:
         op = "in" if instr.arg == 0 else "not in"
         self.stack.push(
             BuiltinVariable(
-                SUPPORT_COMPARE_OP[op], self._graph, DanglingTracker()
+                COMPARE_OP_NAME_TO_FN[op], self._graph, DanglingTracker()
             )(left, right)
         )
 
@@ -1658,7 +1675,7 @@ class OpcodeExecutorBase:
 
         if instr.argval >= 256:
             # NOTE: If the number of unpacked variables exceeds 256, python will report an error like:
-            # SyntaxError: too many expressions in star-unpacking assignmen,
+            # SyntaxError: too many expressions in star-unpacking assignment,
             # so if the number of unpacked variables exceeds 256, it will be treated as the following case.
             # a, b, *c, d = e
             front_nums = instr.arg & 0xFF
@@ -1871,18 +1888,17 @@ class OpcodeExecutor(OpcodeExecutorBase):
 
     """
 
-    def __init__(self, frame: types.FrameType, **kwargs):
-        graph = FunctionGraph(frame, **kwargs)
-        self._frame = frame
+    def __init__(self, frame: types.FrameType, graph: FunctionGraph):
+        self._frame = frame  # TODO: Don't hold frame in executor, just hold vframe instead
         self._name = "Executor"
         self.call_stack[:] = []
         super().__init__(frame.f_code, graph)
         Dispatcher.graph = graph
 
-    def transform(self):
-        static_function = get_static_function(self._frame, "eval_frame")
+    def transform(self, frame: types.FrameType):
+        static_function = get_static_function(frame, "eval_frame")
         if static_function is not None:
-            code = self._frame.f_code
+            code = frame.f_code
             inputs = []
             for i in range(code.co_argcount):
                 arg_name = code.co_varnames[i]
@@ -1917,11 +1933,9 @@ class OpcodeExecutor(OpcodeExecutorBase):
         """
         log(
             3,
-            f"[Executor] code options: co_cellvars={self._frame.f_code.co_cellvars}\n",
+            f"[Executor] code options: co_cellvars={self._code.co_cellvars}\n",
         )
-        free_or_cell_vars = (
-            self._frame.f_code.co_cellvars + self._frame.f_code.co_freevars
-        )
+        free_or_cell_vars = self._code.co_cellvars + self._code.co_freevars
         for name, value in self._frame.f_locals.items():
             tracker = (
                 CellTracker(name)
@@ -1929,7 +1943,7 @@ class OpcodeExecutor(OpcodeExecutorBase):
                 else LocalTracker(name)
             )
             self._locals[name] = VariableFactory.from_value(
-                value, self._graph, tracker, debug_name=name
+                value, self._graph, tracker
             )
 
         for name in free_or_cell_vars:
@@ -1970,7 +1984,9 @@ class OpcodeExecutor(OpcodeExecutorBase):
         try:
             if not isinstance(iterator, SequenceIterVariable):
                 raise BreakGraphError(
-                    f"Can not simulate iterator of {type(iterator)}."
+                    UnsupportedIteratorBreak(
+                        f"Can not simulate iterator of {type(iterator)}."
+                    )
                 )
 
             backup_iter_idx = iterator.idx
@@ -2013,8 +2029,7 @@ class OpcodeExecutor(OpcodeExecutorBase):
 
     def compile_return(self, ret_val):
         compile_graph_result = self._graph.compile_graph(ret_val)
-        graph_fn, _ = compile_graph_result
-        if graph_fn.graph_size() < ENV_MIN_GRAPH_SIZE.get():
+        if need_fallback(compile_graph_result):
             self.new_code = None
         else:
             self._graph.compile_function(compile_graph_result, [ret_val])
@@ -2048,15 +2063,14 @@ class OpcodeExecutor(OpcodeExecutorBase):
             _var = self.get_var(name, allow_undefined=True)
             if _var is SotUndefinedVar():
                 continue
-            if _var not in stack:
+            if _var not in store_vars:
                 store_vars.append(_var)
             store_var_info.setdefault(_var.id, [])
             store_var_info[_var.id].append(name)
 
         compile_graph_result = self._graph.compile_graph(*store_vars)
-        graph_fn, _ = compile_graph_result
 
-        if graph_fn.graph_size() < ENV_MIN_GRAPH_SIZE.get():
+        if need_fallback(compile_graph_result):
             return self._graph._restore_origin_opcode(
                 list(stack), store_var_info, end_idx
             )
@@ -2096,7 +2110,10 @@ class OpcodeExecutor(OpcodeExecutorBase):
             ):
                 return None
             cache_key = (ResumeFunctionType.IF_RESUME, self._code, start_idx)
-            resume_fn_creator = ResumeFunctionCreator(self._frame)
+            resume_fn_creator = ResumeFunctionCreator(
+                self._graph.pycode_gen._origin_code,
+                self._graph.pycode_gen._real_globals,
+            )
             if (
                 maybe_resume_fn := resume_fn_creator.lookup(cache_key)
             ) is not None:
@@ -2142,7 +2159,7 @@ class OpcodeExecutor(OpcodeExecutorBase):
             null_indices=null_indices,
         )
 
-        # 4. setup vars which is created in loop as Undefind
+        # 4. setup vars which is created in loop as Undefined
         for name in true_fn_input_var_names[:-1]:
             if not self.has_var(name):
                 self._graph.pycode_gen.gen_load_const(SotUndefinedVar())
@@ -2158,7 +2175,7 @@ class OpcodeExecutor(OpcodeExecutorBase):
             update_var_names, self.stack, cur_index, []
         )
 
-        # 5. create if sturcture and call true_fn and false_fn
+        # 5. create if structure and call true_fn and false_fn
         var_loader.load(result)
 
         # in 3.13, we have to copy the original 'TO_BOOL' to make the generated bytecode valid.
@@ -2252,7 +2269,10 @@ class OpcodeExecutor(OpcodeExecutorBase):
             if self._instructions[next_index].opname == "RETURN_VALUE":
                 return None
             cache_key = (ResumeFunctionType.CALL_RESUME, self._code, next_index)
-            resume_fn_creator = ResumeFunctionCreator(self._frame)
+            resume_fn_creator = ResumeFunctionCreator(
+                self._graph.pycode_gen._origin_code,
+                self._graph.pycode_gen._real_globals,
+            )
             if (
                 maybe_resume_fn := resume_fn_creator.lookup(cache_key)
             ) is not None:
@@ -2357,7 +2377,10 @@ class OpcodeExecutor(OpcodeExecutorBase):
                 loop_body_start_idx,
                 loop_body_end_idx,
             )
-            resume_fn_creator = ResumeFunctionCreator(self._frame)
+            resume_fn_creator = ResumeFunctionCreator(
+                self._graph.pycode_gen._origin_code,
+                self._graph.pycode_gen._real_globals,
+            )
             if (
                 maybe_resume_fn := resume_fn_creator.lookup(cache_key)
             ) is not None:
@@ -2428,7 +2451,10 @@ class OpcodeExecutor(OpcodeExecutorBase):
                 self._code,
                 loop_body_end_idx,
             )
-            resume_fn_creator = ResumeFunctionCreator(self._frame)
+            resume_fn_creator = ResumeFunctionCreator(
+                self._graph.pycode_gen._origin_code,
+                self._graph.pycode_gen._real_globals,
+            )
             if (
                 maybe_resume_fn := resume_fn_creator.lookup(cache_key)
             ) is not None:
@@ -2454,7 +2480,7 @@ class OpcodeExecutor(OpcodeExecutorBase):
 
         after_loop_fn = create_after_loop_fn()
 
-        # 4. setup vars which is created in loop as Undefind
+        # 4. setup vars which is created in loop as Undefined
         for name in loop_body_inputs[:-1]:
             if not self.has_var(name):
                 self._graph.pycode_gen.gen_load_const(SotUndefinedVar())
@@ -2469,9 +2495,12 @@ class OpcodeExecutor(OpcodeExecutorBase):
             OrderedSet(loop_body_inputs[:-1]) | after_loop_read_names
         )
         extra_store_vars = (
-            [iterator]
+            [
+                item
+                for item in iterator.flatten_inner_vars()
+                if isinstance(item, (TensorVariable, SymbolicVariable))
+            ]
             if isinstance(iterator, IterVariable)
-            and isinstance(iterator.hold, TensorVariable)
             else []
         )
         var_loader = self.get_compute_fn_and_update_changed_vars(
@@ -2585,7 +2614,10 @@ class OpcodeExecutor(OpcodeExecutorBase):
                 start_idx,
                 end_idx,
             )
-            resume_fn_creator = ResumeFunctionCreator(self._frame)
+            resume_fn_creator = ResumeFunctionCreator(
+                self._graph.pycode_gen._origin_code,
+                self._graph.pycode_gen._real_globals,
+            )
             if (
                 maybe_resume_fn := resume_fn_creator.lookup(cache_key)
             ) is not None:

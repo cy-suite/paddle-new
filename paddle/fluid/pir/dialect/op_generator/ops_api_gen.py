@@ -90,7 +90,6 @@ SPARSE_OPS_API_TEMPLATE = """
 {{"sparse_{name}", (PyCFunction)(void (*)(void))sparse_{name}, METH_VARARGS | METH_KEYWORDS, "C++ interface function for sparse_{name}."}},"""
 
 NEED_GEN_STATIC_ONLY_APIS = [
-    'c_softmax_with_cross_entropy',
     'c_softmax_with_multi_label_cross_entropy',
     'distributed_fused_lamb_init',
     'distributed_fused_lamb_init_',
@@ -148,6 +147,7 @@ NEED_GEN_STATIC_ONLY_APIS = [
     'beam_search_decode',
     'nop',
     'nop_',
+    'lod_reset_grad_',
 ]
 
 NO_NEED_GEN_STATIC_ONLY_APIS = [
@@ -235,6 +235,10 @@ NO_NEED_GEN_STATIC_ONLY_APIS = [
     'push_box_sparse_',
     'send_and_recv',
     'send_and_recv_',
+    'straight_through_estimator',
+    "multiply_grad",
+    "scale_grad",
+    "conv2d_grad",
 ]
 
 
@@ -243,17 +247,34 @@ class OpsAPIGen(CodeGen):
         super().__init__()
 
     def _need_skip(self, op_info, op_name):
+        if op_name.endswith("_grad"):
+            if op_name.endswith(("double_grad", "_grad_grad", "triple_grad")):
+                return True
+            if op_name[:-5] in NO_NEED_GEN_STATIC_ONLY_APIS:
+                return True
+        if op_name.endswith("_grad_"):
+            if op_name.endswith(
+                ("double_grad_", "_grad_grad_", "triple_grad_")
+            ):
+                return True
         return (
             super()._need_skip(op_info, op_name)
-            or op_name.endswith(('_grad', '_grad_', 'xpu'))
+            or op_name.endswith('xpu')
             or op_name in NO_NEED_GEN_STATIC_ONLY_APIS
         )
 
     def _gen_one_function_impl(self, name):
-        if name in NEED_GEN_STATIC_ONLY_APIS:
-            return STATIC_ONLY_FUNCTION_IMPL_TEMPLATE.format(name=name)
+        if name.endswith('_grad'):
+            fwd_name = name[:-5]
+            if fwd_name in NEED_GEN_STATIC_ONLY_APIS:
+                return STATIC_ONLY_FUNCTION_IMPL_TEMPLATE.format(name=name)
+            else:
+                return FUNCTION_IMPL_TEMPLATE.format(name=name)
         else:
-            return FUNCTION_IMPL_TEMPLATE.format(name=name)
+            if name in NEED_GEN_STATIC_ONLY_APIS:
+                return STATIC_ONLY_FUNCTION_IMPL_TEMPLATE.format(name=name)
+            else:
+                return FUNCTION_IMPL_TEMPLATE.format(name=name)
 
     def _gen_sparse_one_function_impl(self, name, name_suffix):
         return SPARSE_FUNCTION_IMPL_TEMPLATE.format(

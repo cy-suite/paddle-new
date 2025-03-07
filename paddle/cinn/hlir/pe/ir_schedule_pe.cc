@@ -24,7 +24,6 @@
 #include <numeric>
 #include <utility>
 
-#include "paddle/cinn/common/cas.h"
 #include "paddle/cinn/common/common.h"
 #include "paddle/cinn/common/target.h"
 #include "paddle/cinn/hlir/pe/load_x86_params.h"
@@ -55,7 +54,7 @@ void SetReduceAxis(ir::Expr loop, ir::Expr block) {
       ::common::errors::InvalidArgument(
           "The size of iter_vars and iter_values should be equal."));
   for (int i = 0; i < iter_values.size(); ++i) {
-    std::set<Expr> contains = ir::ir_utils::CollectIRNodesWithoutTensor(
+    std::vector<Expr> contains = ir::ir_utils::CollectIRNodesWithoutTensor(
         iter_values[i],
         [&var_name](const Expr *expr) {
           return expr->As<ir::_Var_>() != nullptr &&
@@ -1300,9 +1299,9 @@ void IRCudaScheduleConv(ir::IRSchedule &ir_sch,  // NOLINT
 
   int n = output->shape[0].as_int32();
   int c = output->shape[1].as_int32();
-  optim::Simplify(&(output->shape[2]));
+  output->shape[2] = optim::ArithSimplify(output->shape[2]);
   int h = output->shape[2].as_int32();
-  optim::Simplify(&(output->shape[3]));
+  output->shape[3] = optim::ArithSimplify(output->shape[3]);
   int w = output->shape[3].as_int32();
   int rc = input_pad->shape[1].as_int32();
 
@@ -1480,8 +1479,8 @@ void IRCudaScheduleConv2(ir::IRSchedule &ir_sch,  // NOLINT
 
   // stages[input_pad]->ComputeInline();
 
-  optim::Simplify(&(output->shape[2]));
-  optim::Simplify(&(output->shape[3]));
+  output->shape[2] = optim::ArithSimplify(output->shape[2]);
+  output->shape[3] = optim::ArithSimplify(output->shape[3]);
 
   VLOG(3) << "Begin IRCudaScheduleConv2 with expr : "
           << ir_sch.GetModule().GetExprs().at(0);

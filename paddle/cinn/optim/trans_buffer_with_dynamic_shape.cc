@@ -17,7 +17,6 @@
 #include <numeric>
 #include <unordered_set>
 
-#include "paddle/cinn/common/cas.h"
 #include "paddle/cinn/common/dev_info_manager.h"
 #include "paddle/cinn/common/integer_set.h"
 #include "paddle/cinn/common/ir_util.h"
@@ -25,6 +24,7 @@
 #include "paddle/cinn/ir/op/ir_operators.h"
 #include "paddle/cinn/ir/utils/ir_compare.h"
 #include "paddle/cinn/ir/utils/ir_copy.h"
+#include "paddle/cinn/optim/ir_simplify.h"
 #include "paddle/cinn/runtime/backend_api.h"
 #include "paddle/cinn/utils/string.h"
 
@@ -200,7 +200,19 @@ LogicalResult TransBufferWithDynamicShapePass::Run(ir::LoweredFunc func) {
                 "The shared memory size used by current kernel is greater "
                 "than the max shared memory per block"));
       },
-      [&](common::HygonDCUArchSYCL) { CINN_NOT_IMPLEMENTED });
+      [&](common::HygonDCUArchSYCL) {
+        using cinn::runtime::BackendAPI;
+        size_t max_shm_per_block =
+            BackendAPI::get_backend(common::HygonDCUArchSYCL{})
+                ->get_device_property(
+                    BackendAPI::DeviceProperty::MaxSharedMemoryPerBlock);
+        PADDLE_ENFORCE_LE(
+            mutator.shared_mem_size_used(),
+            max_shm_per_block,
+            ::common::errors::InvalidArgument(
+                "The shared memory size used by current kernel is greater "
+                "than the max shared memory per block"));
+      });
   return LogicalResult::success();
 }
 

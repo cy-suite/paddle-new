@@ -566,7 +566,7 @@ void AutoMixedPrecisionPass::UpdateOpPrecision() const {
             vars_should_not_low_precision.insert(in_var_node->Var()->Name());
           }
         }
-        // when op_1 only support cpu kernel. if op_2's intput var is op_1's
+        // when op_1 only support cpu kernel. if op_2's input var is op_1's
         // output var, then op_2 should not run at low precision.
         if (GetOpOriginalType(op_type) != "feed" &&
             GetOpOriginalType(op_type) != "tensorrt_engine" &&
@@ -902,7 +902,7 @@ void AutoMixedPrecisionPass::SetVarPrecision() const {
     }
   }
 
-  // This code used to precess vars with the same name. Vars with the same
+  // This code used to process vars with the same name. Vars with the same
   // name should have the same data type.
   for (auto* subgraph : subgraphes_) {
     for (auto* var_node : subgraph->Nodes()) {

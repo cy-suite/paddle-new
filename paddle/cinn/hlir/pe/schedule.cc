@@ -25,7 +25,6 @@
 #include <numeric>
 #include <utility>
 
-#include "paddle/cinn/common/cas.h"
 #include "paddle/cinn/hlir/pe/load_x86_params.h"
 #include "paddle/cinn/optim/ir_simplify.h"
 #include "paddle/cinn/poly/isl_utils.h"
@@ -1368,7 +1367,7 @@ void CudaScheduleInjectiveWithVectorize(poly::Stage *stage,
   // the first bind position from tail
   int bind_idx = stage->n_out_dims() - 1;
   // it will add a new dim by split before vectorize, but the new dim will
-  // be eliminated when vectorizing, so the bind_idx does't need to increase
+  // be eliminated when vectorizing, so the bind_idx doesn't need to increase
   if (vector_width > 1) {
     stage->Split(bind_idx, vector_width);
   }

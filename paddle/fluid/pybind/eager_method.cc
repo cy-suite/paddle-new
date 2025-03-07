@@ -1421,6 +1421,7 @@ static PyObject* tensor__getitem_dygraph(TensorObject* self,
                                          PyObject* args,
                                          PyObject* kwargs) {
   EAGER_TRY
+  SetPythonStack();
   PyObject* _index = PyTuple_GET_ITEM(args, 0);
   VLOG(4) << "Call new indexing strategy _getitem_dygraph";
 
@@ -1632,7 +1633,7 @@ static PyObject* tensor__getitem_from_offset(TensorObject* self,
           index,
           dims[i],
           common::errors::InvalidArgument(
-              "index %d is out fo bounds for axis %d with size %d",
+              "index %d is out of bounds for axis %d with size %d",
               index,
               i,
               dims[i]));
@@ -1691,6 +1692,7 @@ static PyObject* tensor__setitem_dygraph(TensorObject* self,
                                          PyObject* args,
                                          PyObject* kwargs) {
   EAGER_TRY
+  SetPythonStack();
   VLOG(4) << "Call new indexing strategy _setitem_dygraph";
 
   PyObject* _index = PyTuple_GET_ITEM(args, 0);
@@ -2006,6 +2008,7 @@ static PyObject* tensor_register_grad_hook(TensorObject* self,
                                            PyObject* args,
                                            PyObject* kwargs) {
   EAGER_TRY
+  SetPythonStack();
   int64_t hook_id = 0;
   if (egr::EagerUtils::IsLeafTensor(self->tensor)) {
     VLOG(6) << "Register hook for leaf tensor: " << self->tensor.name();

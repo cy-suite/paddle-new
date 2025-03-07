@@ -50,6 +50,7 @@
 #include "paddle/fluid/pir/dialect/operator/ir/pd_op.h"
 #include "paddle/fluid/pir/dialect/operator/trait/inplace.h"
 #include "paddle/fluid/pir/dialect/operator/utils/op_yaml_info_parser.h"
+#include "paddle/fluid/pir/dialect/operator/utils/shape_analysis_utils.h"
 #include "paddle/fluid/pir/dialect/operator/utils/utils.h"
 #include "paddle/fluid/pir/drr/include/drr_pattern_base.h"
 #include "paddle/fluid/pir/transforms/general/common_subexpression_elimination_pass.h"
@@ -70,6 +71,7 @@
 #include "paddle/pir/include/core/builtin_attribute.h"
 #include "paddle/pir/include/core/builtin_op.h"
 #include "paddle/pir/include/core/ir_mapping.h"
+#include "paddle/pir/include/core/ir_printer.h"
 #include "paddle/pir/include/core/program.h"
 #include "paddle/pir/include/core/type.h"
 #include "paddle/pir/include/core/value.h"
@@ -79,6 +81,7 @@
 #include "paddle/pir/include/dialect/shape/ir/shape_attribute.h"
 #include "paddle/pir/include/dialect/shape/ir/shape_dialect.h"
 #include "paddle/pir/include/dialect/shape/transforms/shape_optimization_pass.h"
+#include "paddle/pir/include/dialect/shape/utils/original_attributes_filter.h"
 #include "paddle/pir/include/pass/pass.h"
 #include "paddle/pir/include/pass/pass_manager.h"
 #include "paddle/pir/include/pass/pass_registry.h"
@@ -136,7 +139,6 @@ using pybind11::return_value_policy;
 namespace name_analysis = pir::utils::name_analysis;
 
 COMMON_DECLARE_bool(print_ir);
-COMMON_DECLARE_bool(pir_apply_shape_optimization_pass);
 
 namespace paddle {
 namespace pybind {
@@ -707,6 +709,15 @@ void BindBlock(py::module *m) {
         use `Program.block()` to get a block.
   )DOC");
   block.def("empty", &Block::empty)
+      .def(
+          "__str__",
+          [](Block &self) {
+            std::ostringstream print_stream;
+            pir::IrPrinter printer(print_stream);
+            printer.PrintBlock(self);
+            return print_stream.str();
+          },
+          return_value_policy::reference)
       .def(
           "front",
           [](Block &self) { return &self.front(); },
@@ -1445,14 +1456,14 @@ void BindValue(py::module *m) {
       .def_property(
           "place_attr",
           [](Value self) -> phi::Place {
-            auto palce_attr = self.attribute<PlaceAttribute>("place");
-            return palce_attr ? palce_attr.data() : phi::Place();
+            auto place_attr = self.attribute<PlaceAttribute>("place");
+            return place_attr ? place_attr.data() : phi::Place();
           },
           [](Value self, const phi::Place &place) {
             // auto place = CastPyArg2Place(place_obj.release().ptr(), 1);
             auto place_attr =
                 dialect::PlaceAttribute::get(pir::IrContext::Instance(), place);
-            self.set_attribute("palce", place_attr);
+            self.set_attribute("place", place_attr);
           })
       .def("initialized",
            [](Value self) {
@@ -2361,6 +2372,11 @@ void BindUtils(pybind11::module *m) {
   m->def("set_op_role",
          [](int op_role) { ApiBuilder::Instance().SetOpRole(op_role); });
   m->def("get_op_role", []() { return ApiBuilder::Instance().GetOpRole(); });
+  m->def("set_comp_op_name", [](std::string comp_op_name) {
+    ApiBuilder::Instance().SetCompOpName(comp_op_name);
+  });
+  m->def("get_comp_op_name",
+         []() { return ApiBuilder::Instance().GetCompOpName(); });
   m->def("register_paddle_dialect", []() {
     pir::IrContext::Instance()
         ->GetOrRegisterDialect<paddle::dialect::OperatorDialect>();
@@ -2532,7 +2548,7 @@ void ApplyCinnPass(Program &program) {  // NOLINT
     ctx->GetOrRegisterDialect<cinn::dialect::OperatorDialect>();
     ctx->GetOrRegisterDialect<pir::shape::ShapeDialect>();
     auto pass_manager = std::make_shared<pir::PassManager>(ctx);
-    if (FLAGS_print_ir) {
+    if (FLAGS_print_ir && VLOG_IS_ON(4)) {
       pass_manager->EnableIRPrinting();
     }
     auto &shape_analysis = pir::ShapeAnalysisManager::Instance().Get(&program);
@@ -2575,9 +2591,9 @@ void InferSymbolicShapePass(
     pir::Program &program) {                          // NOLINT
   pir::IrContext *ctx = pir::IrContext::Instance();
   ctx->GetOrRegisterDialect<pir::shape::ShapeDialect>();
-  if (FLAGS_pir_apply_shape_optimization_pass) {
-    pass_manager->AddPass(pir::CreateShapeOptimizationPass());
-  }
+  pir::OriginalAttributesFilter::Instance().SetOriginalAttributesMap(
+      paddle::dialect::GetAllOpOriginalAttributes());
+  pass_manager->AddPass(pir::CreateShapeOptimizationPass());
 }
 
 std::shared_ptr<Program> ApplyCommonSubexpressionEliminationPass(
@@ -2594,18 +2610,12 @@ std::shared_ptr<Program> ApplyCommonSubexpressionEliminationPass(
   return program;
 }
 
-std::shared_ptr<Program> ApplyReduceAsToSumPass(
-    std::shared_ptr<Program> program) {
+void ApplyReduceAsToSumPass(
+    std::shared_ptr<pir::PassManager> &pass_manager,  // NOLINT
+    pir::Program &program) {                          // NOLINT
 #ifdef PADDLE_WITH_CINN
-  pir::PassManager pm(pir::IrContext::Instance(), 2);
-  pm.AddPass(cinn::dialect::ir::CreateReduceAsToSumPass());
-  pm.AddPass(pir::CreateDeadCodeEliminationPass());
-  pm.Run(program.get());
-  if (FLAGS_print_ir) {
-    std::cout << "IR After ReduceAsToSumPass -------------------" << std::endl;
-    std::cout << *program << std::endl;
-  }
-  return program;
+  pass_manager->AddPass(cinn::dialect::ir::CreateReduceAsToSumPass());
+  pass_manager->AddPass(pir::CreateDeadCodeEliminationPass());
 #else
   PADDLE_THROW(common::errors::Unimplemented(
       "Currently we only support ReduceAsToSumPass Pass for Pir under "
@@ -2676,6 +2686,12 @@ void BindPassManager(pybind11::module *m) {
                  pass->Set(attr.first, new int(attr.second.cast<int>()));
                } else if (py::isinstance<py::float_>(attr.second)) {
                  pass->Set(attr.first, new float(attr.second.cast<float>()));
+               } else if (py::isinstance<framework::Scope>(attr.second)) {
+                 pass->SetNotOwned(attr.first,
+                                   attr.second.cast<framework::Scope *>());
+               } else if (py::isinstance<phi::GPUPlace>(attr.second)) {
+                 pass->Set(attr.first,
+                           new phi::Place(attr.second.cast<phi::GPUPlace>()));
                } else {
                  PADDLE_THROW(common::errors::InvalidArgument(
                      "The pass attr is not supported this type."));

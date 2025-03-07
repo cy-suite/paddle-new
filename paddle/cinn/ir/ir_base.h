@@ -177,8 +177,12 @@ enum class StmtNodeTy { kUnk = -1, NODETY_FORALL_STMT(__m) };
 //! String representations for IrNodeTy.
 // @{
 #define __m(x__) #x__,
-const std::vector<std::string> kIrNodeTyReprs(
-    {NODETY_FORALL(__m) "IterSplit", "IterSum", "IterMark", "None"});
+const std::vector<std::string> kIrNodeTyReprs({"Module",
+                                               "LoweredFunc",
+                                               "IterSplit",
+                                               "IterSum",
+                                               "IterMark",
+                                               NODETY_FORALL(__m)});
 #undef __m
 // @}
 
@@ -695,6 +699,8 @@ Expr ExprNode<T>::Copy() const {
 }
 
 void TryElevateInt32ToInt64(const std::vector<Expr>& expr_vec);
+
+void TryElevateInt64ToInt32(const std::vector<Expr>& expr_vec);
 
 }  // namespace ir
 }  // namespace cinn

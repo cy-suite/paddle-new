@@ -70,7 +70,7 @@ class RearrangeLoadInstructionPass : public FuncPass {
  *
  *
  * Performance Impact:
- * This pass can enhance performance by up to 20% for both Reduce and Trvial.
+ * This pass can enhance performance by up to 20% for both Reduce and Trivial.
  * The improvement is often more pronounced when expressions involve complex ops
  * (e.g. div, exp and rsqrt) and when multiple schedule blocks exist within one
  * leaf block. The performance gain comes from that the NVCC tends to conserve
@@ -78,19 +78,19 @@ class RearrangeLoadInstructionPass : public FuncPass {
  * this pass, we force NVCC to use more registers and engage in more aggressive
  * software pipelining.
  *
- * However, there are also random cases where this pass may decrease performace.
- * The reason is unclear yet (perhaps because of suboptimal unrolling and
- * register overflow). We have used some strategies to avoid these cases, such
- * as limiting the maximum number of loads to rearrange and forbidding certain
- * patterns. While we cannot currently guarantee a consistent improvement, our
- * experiments indicate that the performance degradation is within 5% in the
- * worst case.
+ * However, there are also random cases where this pass may decrease
+ * performance. The reason is unclear yet (perhaps because of suboptimal
+ * unrolling and register overflow). We have used some strategies to avoid these
+ * cases, such as limiting the maximum number of loads to rearrange and
+ * forbidding certain patterns. While we cannot currently guarantee a consistent
+ * improvement, our experiments indicate that the performance degradation is
+ * within 5% in the worst case.
  *
  *
  * Limitations:
  * 1) The Select op is handled carefully, as for loads in Select's branches, we
  *    only rearrange those that appear on both branches.
- * 2) Indicrect loads (i.e. loads in indices) are not handled at all.
+ * 2) Indirect loads (i.e. loads in indices) are not handled at all.
  * 3) If there are too many candidate loads to rearrange in a leaf block, we
  *    heuristically choose only 8 loads to rearrange.
  *

@@ -25,6 +25,7 @@ from paddle.framework import (
     LayerHelper,
     _create_tensor,
     in_dynamic_mode,
+    in_dynamic_or_pir_mode,
     in_pir_mode,
 )
 from paddle.nn import Layer
@@ -139,21 +140,7 @@ def _c_concat(tensor, group=None):
     rank = group.rank
     nranks = group.nranks
 
-    if in_dynamic_mode():
-        return _legacy_C_ops.c_concat(
-            tensor,
-            'ring_id',
-            ring_id,
-            'use_calc_stream',
-            True,
-            'rank',
-            rank,
-            'nranks',
-            nranks,
-            'use_model_parallel',
-            True,
-        )
-    elif in_pir_mode():
+    if in_dynamic_or_pir_mode():
         return _C_ops.c_concat(tensor, rank, nranks, ring_id, True, True)
     else:
         op_type = 'c_concat'
@@ -432,17 +419,8 @@ def _c_softmax_with_cross_entropy(
         )
 
     if in_dynamic_mode():
-        softmax, loss = _legacy_C_ops.c_softmax_with_cross_entropy(
-            logits,
-            label,
-            'ring_id',
-            ring_id,
-            'rank',
-            rank,
-            'nranks',
-            nranks,
-            'ignore_index',
-            ignore_index,
+        softmax, loss = _C_ops.c_softmax_with_cross_entropy(
+            logits, label, ignore_index, ring_id, rank, nranks
         )
         if not return_softmax:
             return loss

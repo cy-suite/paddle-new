@@ -51,6 +51,7 @@ from ..base.backward import (
 )
 from ..base.framework import Parameter
 from ..base.layer_helper import LayerHelper, LayerHelperBase
+from ..base.log_helper import get_logger
 from .fusion_utils import FusionStorage
 from .lr import LambdaDecay, LRScheduler
 
@@ -68,6 +69,11 @@ if TYPE_CHECKING:
         params: Sequence[Tensor]
         weight_decay: NotRequired[float | WeightDecayRegularizer | None]
         learning_rate: NotRequired[float | Tensor | LRScheduler | None]
+
+
+local_logger = get_logger(
+    __name__, logging.INFO, fmt='%(asctime)s-%(levelname)s: %(message)s'
+)
 
 
 __all__ = []
@@ -288,7 +294,7 @@ class Optimizer:
         # Dictionary of accumulators. Some optimizer subclasses need to
         # allocate and manage extra tensors associated with the parameters
         # to train. These tensors are called accumulators.
-        # {accum_name : { paramter_name : accumulator_for_parameter, ...}, ...}
+        # {accum_name : { parameter_name : accumulator_for_parameter, ...}, ...}
         self._accumulators = defaultdict(lambda: {})
         self.helper = None
         self._opti_name_list = []
@@ -361,9 +367,22 @@ class Optimizer:
         if self.__class__.__name__ != "AdamW":
             return
 
+        # add buffer check
+        if self.fused_states_buffer is not None:
+            for _, v in self._accumulators.items():
+                for _, vv in v.items():
+                    if not vv._is_shared_buffer_with(self.fused_states_buffer):
+                        self.need_refuse()
+            for _, v in self._master_weights.items():
+                if not v._is_shared_buffer_with(self.fused_states_buffer):
+                    self.need_refuse()
+
         if not self._need_refuse:
             return
 
+        local_logger.warning(
+            f"refuse optimizer fuse buffer version start: {self._fuse_buffer_version}"
+        )
         self.fusion_storage = FusionStorage(
             self._accumulators,
             self._master_weights,
@@ -371,6 +390,9 @@ class Optimizer:
         )
         self._fuse_buffer_version += 1
         self.reset_need_refuse()
+        local_logger.warning(
+            f"refuse optimizer fuse buffer version end: {self._fuse_buffer_version}"
+        )
 
     @framework.dygraph_only
     def state_dict(self) -> dict[str, Tensor]:
@@ -528,11 +550,11 @@ class Optimizer:
                         initializer = paddle.nn.initializer.Constant(
                             value=lr_value
                         )
-                        paramete_meta = paddle.pir.core.ParameterMeta(
+                        parameter_meta = paddle.pir.core.ParameterMeta(
                             [], _lr_dtype
                         )
                         init_result = initializer(
-                            paramete_meta, startup_program.global_block()
+                            parameter_meta, startup_program.global_block()
                         )
                         init_result.persistable = True
                         set_parameter(init_result, lr_name)
@@ -732,7 +754,7 @@ class Optimizer:
 
         if not isinstance(scheduler, LRScheduler):
             raise TypeError(
-                f"The type of 'scheduler' in optimizer.set_lr_schduler must be LRScheduler, but received {type(scheduler)}."
+                f"The type of 'scheduler' in optimizer.set_lr_scheduler must be LRScheduler, but received {type(scheduler)}."
             )
         self._learning_rate = scheduler
 
@@ -1760,15 +1782,15 @@ class Optimizer:
                 )
                 params_and_grads.append((param, new_grad))
         else:
-            repeate_regularizer = False
+            repeat_regularizer = False
             with framework.name_scope('regularization'):
                 for param, grad in parameters_and_grads:
                     if (
-                        not repeate_regularizer
+                        not repeat_regularizer
                         and param.regularizer is not None
                         and regularization is not None
                     ):
-                        repeate_regularizer = True
+                        repeat_regularizer = True
                         logging.info(
                             "If regularizer of a Parameter has been set by 'base.ParamAttr' or 'base.WeightNormParamAttr' already. "
                             f"The Regularization[{regularization}] in Optimizer will not take effect, and it will only be applied to other Parameters!"
@@ -2008,7 +2030,7 @@ class Optimizer:
         Add a param group to parameter_list.
 
         Args:
-            param_group (dict): The group of Tensors to be optimzed with
+            param_group (dict): The group of Tensors to be optimized with
             different optimization options.
         """
         params = param_group['params']
@@ -2052,7 +2074,7 @@ class Optimizer:
         """
         Update the param group with new entry
         Args:
-            parameters (dict): The extra group of Tensors to be optimzed with
+            parameters (dict): The extra group of Tensors to be optimized with
             different optimization options. Only used in child class.
         """
         pass

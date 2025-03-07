@@ -284,7 +284,7 @@ def to_static(
 
     def decorated(python_func):
         """
-        Decorates a python function into a ASTStaticFunction object.
+        Decorates a python function into a ASTStaticFunction or SymbolicStaticFunction object.
         """
 
         nonlocal full_graph
@@ -298,10 +298,9 @@ def to_static(
             )
             full_graph = True
 
-        StaticClass = {
-            False: SymbolicStaticFunction,
-            True: ASTStaticFunction,
-        }[full_graph]
+        StaticClass = (
+            ASTStaticFunction if full_graph else SymbolicStaticFunction
+        )
 
         # Step 1. unwrap the function if it is already decorated.
         _, python_func = unwrap_decorators(python_func)
@@ -615,7 +614,6 @@ def _get_input_var_and_names(inputs, input_spec, input_names_after_prune):
             elif spec.name not in input_var_names:
                 warnings.warn(name_no_exists_error % spec.name)
             else:
-                # do nothing
                 pass
     else:
         # prune
@@ -650,7 +648,7 @@ def _get_output_vars(outputs, output_spec, with_hook=False):
     )
     output_spec_is_not_value_error = (
         "tensor `%s` is not support in pir mode, "
-        "because pir value has no name sometimes, especially as ouptut,"
+        "because pir value has no name sometimes, especially as output,"
         "so we can't check tensor's name with output var name, please"
         "change as pir.value(to_static layer's output)"
         "or int(the position of to_static layer's output)"

@@ -17,7 +17,6 @@
 #include <algorithm>
 #include <utility>
 
-#include "paddle/cinn/common/cas.h"
 #include "paddle/cinn/common/context.h"
 #include "paddle/cinn/common/ir_util.h"
 #include "paddle/cinn/hlir/op/op_util.h"
@@ -25,6 +24,7 @@
 #include "paddle/cinn/hlir/pe/schedule.h"
 #include "paddle/cinn/ir/tensor.h"
 #include "paddle/cinn/lang/compute.h"
+#include "paddle/cinn/optim/ir_simplify.h"
 #include "paddle/cinn/utils/string.h"
 #include "paddle/common/enforce.h"
 #include "paddle/common/errors.h"
@@ -1200,12 +1200,12 @@ ir::Tensor Reverse(const ir::Tensor& input,
   std::vector<Expr> shape = input->shape;
   return lang::Compute(
       input->shape,
-      [=](const std::vector<Expr>& indice) {
-        std::vector<Expr> indexs(indice.begin(), indice.end());
+      [=](const std::vector<Expr>& indices) {
+        std::vector<Expr> out_indices(indices.begin(), indices.end());
         for (auto idx : axis) {
-          indexs[idx] = shape[idx] - Expr(1) - indexs[idx];
+          out_indices[idx] = shape[idx] - Expr(1) - out_indices[idx];
         }
-        return input(indexs);
+        return input(out_indices);
       },
       output_name);
 }
@@ -1256,12 +1256,12 @@ ir::Tensor Transpose(const ir::Tensor& input,
 
   return lang::Compute(
       output_shape,
-      [=](const std::vector<Expr>& indice) {
-        std::vector<Expr> indexs;
+      [=](const std::vector<Expr>& indices) {
+        std::vector<Expr> out_indices;
         for (auto idx : new_axis) {
-          indexs.push_back(indice[idx]);
+          out_indices.push_back(indices[idx]);
         }
-        return input(indexs);
+        return input(out_indices);
       },
       output_name);
 }
@@ -1367,10 +1367,20 @@ ir::Tensor SliceSymbolic(const ir::Tensor& A,
       } else if (new_starts[i].as_int64() > input_shape[axes[i]].as_int64()) {
         new_starts[i] = input_shape[axes[i]].as_int64() - ir::Expr(1);
       }
-    } else {
-      if (new_starts[i].is_constant() && new_starts[i].as_int64() < 0) {
-        new_starts[i] = ir::Add::Make(input_shape[axes[i]], new_starts[i]);
+    } else if (new_starts[i]
+                   .is_constant()) {  // input_shape[axes[i]] is not constant
+      if (new_starts[i].as_int64() < 0) {
+        new_starts[i] = ir::Max::Make(
+            Expr(0), ir::Add::Make(input_shape[axes[i]], new_starts[i]));
+      } else {
+        new_starts[i] = ir::Min::Make(input_shape[axes[i]], new_starts[i]);
       }
+    } else if (input_shape[axes[i]]
+                   .is_constant()) {  // new_starts[i] is not constant, only
+                                      // support new_starts[i] >= 0
+      new_starts[i] = ir::Min::Make(input_shape[axes[i]], new_starts[i]);
+    } else {  // both are not constant, only support new_starts[i] >= 0
+      new_starts[i] = ir::Min::Make(input_shape[axes[i]], new_starts[i]);
     }
   }
 

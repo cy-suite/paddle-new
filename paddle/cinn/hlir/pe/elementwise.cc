@@ -17,12 +17,12 @@
 #include <algorithm>
 #include <string>
 
-#include "paddle/cinn/common/cas.h"
 #include "paddle/cinn/common/dim_expr_converter.h"
 #include "paddle/cinn/common/integer_set.h"
 #include "paddle/cinn/hlir/framework/pir/trivial_op_util.h"
 #include "paddle/cinn/hlir/op/op_util.h"
 #include "paddle/cinn/ir/op/ir_operators.h"
+#include "paddle/cinn/optim/ir_simplify.h"
 #include "paddle/cinn/utils/functional.h"
 #include "paddle/common/enforce.h"
 namespace cinn {
@@ -163,11 +163,11 @@ ir::Tensor Squeeze(const ir::Tensor& A,
   auto res = Compute(
       output_shape,
       [=](const std::vector<Expr>& indices) {
-        std::vector<Expr> indexs(A->shape.size(), Expr(0));
+        std::vector<Expr> out_indices(A->shape.size(), Expr(0));
         for (int idx = 0; idx < indices.size(); ++idx) {
-          indexs[position[idx]] = indices[idx];
+          out_indices[position[idx]] = indices[idx];
         }
-        return A(indexs);
+        return A(out_indices);
       },
       output_name);
   return res;

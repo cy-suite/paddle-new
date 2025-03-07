@@ -180,7 +180,8 @@ paddle::Tensor CallScalarFunction(const paddle::Tensor& self_tensor,
                                   double other,
                                   std::string op_type) {
   paddle::Tensor ret;
-  // scale_ad_func need sclar and bias with float type.
+  SetPythonStack();
+  // scale_ad_func need scalar and bias with float type.
   if (op_type == "add" || op_type == "radd") {
     ret = scale_ad_func(self_tensor, phi::Scalar(1.0), other, true);
   } else if (op_type == "sub") {
@@ -223,6 +224,7 @@ void TypePromotionForZeroDimTensor(std::string func,
         promote_type = self_tensor.dtype();
       }
     }
+    SetPythonStack();
     if (self_tensor.dtype() != promote_type) {
       eager_gil_scoped_release guard;
       self_tensor = cast_ad_func(self_tensor, promote_type);
@@ -243,6 +245,9 @@ static PyObject* tensor__add__method(TensorObject* self,
 
   EAGER_TRY
   VLOG(6) << "Running Eager tensor__add__method";
+
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -338,6 +343,8 @@ static PyObject* tensor__sub__method(TensorObject* self,
   EAGER_TRY
   VLOG(6) << "Running Eager tensor__sub__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -432,6 +439,8 @@ static PyObject* tensor__rsub__method(TensorObject* self,
   EAGER_TRY
   VLOG(4) << "Running Eager tensor__rsub__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -524,6 +533,8 @@ static PyObject* tensor__mul__method(TensorObject* self,
 
   EAGER_TRY
   VLOG(6) << "Running Eager tensor__mul__method";
+
+  SetPythonStack();
 
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
@@ -628,6 +639,8 @@ static PyObject* tensor__div__method(TensorObject* self,
 
   VLOG(6) << "Running Eager tensor__div__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -720,6 +733,8 @@ static PyObject* tensor__rdiv__method(TensorObject* self,
 
   VLOG(6) << "Running Eager tensor__rdiv__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -805,6 +820,8 @@ static PyObject* tensor__gt__method(TensorObject* self,
 
   EAGER_TRY
   VLOG(4) << "Running Eager tensor__gt__method";
+
+  SetPythonStack();
 
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
@@ -897,6 +914,8 @@ static PyObject* tensor__ge__method(TensorObject* self,
   EAGER_TRY
   VLOG(4) << "Running Eager tensor__ge__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -987,6 +1006,8 @@ static PyObject* tensor__mod__method(TensorObject* self,
   EAGER_TRY
 
   VLOG(6) << "Running Eager tensor__mod__method";
+
+  SetPythonStack();
 
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
@@ -1079,6 +1100,8 @@ static PyObject* tensor__rmod__method(TensorObject* self,
 
   VLOG(6) << "Running Eager tensor__rmod__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -1169,6 +1192,8 @@ static PyObject* tensor__matmul__method(TensorObject* self,
   EAGER_TRY
 
   VLOG(6) << "Running Eager tensor__matmul__method";
+
+  SetPythonStack();
 
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
@@ -1295,6 +1320,8 @@ static PyObject* tensor__rmatmul__method(TensorObject* self,
 
   VLOG(6) << "Running Eager tensor__rmatmul__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -1420,6 +1447,8 @@ static PyObject* tensor__lt__method(TensorObject* self,
   EAGER_TRY
   VLOG(4) << "Running Eager tensor__lt__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -1511,6 +1540,8 @@ static PyObject* tensor__le__method(TensorObject* self,
   EAGER_TRY
   VLOG(4) << "Running Eager tensor__le__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -1600,6 +1631,8 @@ static PyObject* tensor__floordiv__method(TensorObject* self,
       "floordiv pybind_patch_func", phi::TracerEventType::UserDefined, 1);
   EAGER_TRY
   VLOG(6) << "Running Eager tensor__floordiv__method";
+
+  SetPythonStack();
 
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
@@ -1691,6 +1724,8 @@ static PyObject* tensor__rfloordiv__method(TensorObject* self,
   EAGER_TRY
   VLOG(6) << "Running Eager tensor__rfloordiv__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -1781,6 +1816,8 @@ static PyObject* tensor__pow__method(TensorObject* self,
 
   EAGER_TRY
   VLOG(6) << "Running Eager tensor__pow__method";
+
+  SetPythonStack();
 
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
@@ -1877,6 +1914,8 @@ static PyObject* tensor__rpow__method(TensorObject* self,
   EAGER_TRY
   VLOG(6) << "Running Eager tensor__rpow__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -1970,6 +2009,8 @@ static PyObject* tensor__ne__method(TensorObject* self,
   EAGER_TRY
   VLOG(6) << "Running Eager tensor__ne__method";
 
+  SetPythonStack();
+
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();
   SetDevice(place);
@@ -2060,6 +2101,8 @@ static PyObject* tensor__eq__method(TensorObject* self,
 
   EAGER_TRY
   VLOG(6) << "Running Eager tensor__eq__method";
+
+  SetPythonStack();
 
   // Set Device ID
   auto place = egr::Controller::Instance().GetExpectedPlace();

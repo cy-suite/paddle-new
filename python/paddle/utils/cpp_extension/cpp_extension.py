@@ -292,7 +292,7 @@ def CppExtension(
     # be replaced as `setup.name` to keep consistent with package. Because we allow
     # users can not specific name in Extension.
     # See `paddle.utils.cpp_extension.setup` for details.
-    name = kwargs.get('name', None)
+    name = kwargs.pop('name', None)
     if name is None:
         name = _generate_extension_name(sources)
 
@@ -552,8 +552,8 @@ class BuildExtension(build_ext):
             )
             cc_args = self._get_cc_args(pp_opts, debug, extra_preargs)
             # Create a thread pool
-            worke_number = min(os.cpu_count(), len(objects))
-            with ThreadPoolExecutor(max_workers=worke_number) as executor:
+            worker_number = min(os.cpu_count(), len(objects))
+            with ThreadPoolExecutor(max_workers=worker_number) as executor:
                 # Submit all compilation tasks to the thread pool.
                 futures = {
                     executor.submit(

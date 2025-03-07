@@ -125,7 +125,7 @@ struct LoadCollector : public ir::IRMutator<> {
   // 2) The value being loaded is not defined locally by a previous store. In
   //    such cases, the value resides in a register rather than in memory,
   //    thus doesn't need rearrangement. This criteria also prevents
-  //    data-dependency harzards.
+  //    data-dependency hazards.
   // 3) It doesn't contains indirect indices (i.e. loads within indices).
   //    Indirect indices are hard to manage and are seldom seem, so we choose
   //    not to handle them.
@@ -307,6 +307,18 @@ struct RearrangeLoadInstructionMutator : public ir::stmt::StmtMutator<> {
            store_stmt->value().As<ir::Load>();
   }
 
+  // If there is any vectorized loop in the block skip pass
+  bool HasVectorizedLoop(BlockRef block) {
+    bool is_vectorized = false;
+    auto pre_callback = [&is_vectorized](const StmtRef& stmt) {
+      if (stmt.isa<For>() && stmt.as<For>()->is_vectorized())
+        is_vectorized = true;
+    };
+
+    ir::stmt::Visit(block, pre_callback, [](const StmtRef&) {});
+    return is_vectorized;
+  }
+
   void DoRearrangeLoadInstruction(BlockRef block) {
     auto GetStoreOfScheduleStmt = [](Schedule schedule_stmt) -> Store {
       bool found = false;
@@ -386,6 +398,7 @@ struct RearrangeLoadInstructionMutator : public ir::stmt::StmtMutator<> {
   }
 
   void VisitBlock(BlockRef block) override {
+    if (HasVectorizedLoop(block)) return;
     ir::stmt::StmtMutator<>::VisitBlock(block);
     if (IsLeafBlock(block)) {
       DoRearrangeLoadInstruction(block);

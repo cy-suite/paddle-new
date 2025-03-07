@@ -19,6 +19,7 @@
 #include <functional>
 #include <memory>
 #include <optional>
+#include <random>
 #include "paddle/cinn/hlir/dialect/operator/transforms/check_infer_symbolic_pass.h"
 #include "paddle/cinn/hlir/dialect/operator/transforms/local_infer_symbolic_util.h"
 #include "paddle/cinn/hlir/dialect/operator/transforms/split_generate_shape_into_shape_ops_pass.h"
@@ -137,9 +138,6 @@ struct ShapeSignatureGenerator {
         [&](const symbol::Negative<symbol::DimExpr>& negative) {
           GetSymbolsForOneDimExpr(negative->data, symbols);
         },
-        [&](const symbol::Reciprocal<symbol::DimExpr>& reciprocal) {
-          GetSymbolsForOneDimExpr(reciprocal->data, symbols);
-        },
         [&](const symbol::Add<symbol::DimExpr>& add) {
           for (const auto& dim_expr : *add.operands) {
             GetSymbolsForOneDimExpr(dim_expr, symbols);
@@ -149,6 +147,10 @@ struct ShapeSignatureGenerator {
           for (const auto& dim_expr : *mul.operands) {
             GetSymbolsForOneDimExpr(dim_expr, symbols);
           }
+        },
+        [&](const symbol::Div<symbol::DimExpr>& div) {
+          GetSymbolsForOneDimExpr(div->lhs, symbols);
+          GetSymbolsForOneDimExpr(div->rhs, symbols);
         },
         [&](const symbol::Max<symbol::DimExpr>& max) {
           for (const auto& dim_expr : *max.operands) {

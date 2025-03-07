@@ -212,7 +212,7 @@
   infer_meta :
     func : EmbeddingInferMeta
     param : [x, weight, padding_idx]
-    spmd_rule: EmbeddingInferSpmdUnsupportVocabParallel
+    spmd_rule: EmbeddingInferSpmdUnsupportedVocabParallel
   kernel :
     func : embedding {dense, dense -> dense}
            sparse_weight_embedding {dense, selected_rows -> dense}
@@ -532,6 +532,7 @@
     func : memcpy
     param: [x, dst_place_type]
   interfaces : paddle::dialect::InferSymbolicShapeInterface
+  traits : paddle::dialect::ForwardOnlyTrait
 
 - op : min
   args : (Tensor x, IntArray axis={}, bool keepdim=false)
@@ -627,7 +628,8 @@
     func : print_kernel
     param: [in, first_n, message, summarize, print_tensor_name, print_tensor_type, print_tensor_shape, print_tensor_layout, print_tensor_lod, print_phase, is_forward]
   interfaces : paddle::dialect::InferSymbolicShapeInterface
-  traits : pir::SideEffectTrait, paddle::dialect::ForwardOnlyTrait
+  traits : pir::SideEffectTrait
+  backward: print_grad
 
 - op : pull_box_sparse
   args : (Tensor w, Tensor[] ids, bool is_sparse = false, bool is_distributed = false, int size = 1)
@@ -937,19 +939,6 @@
 - op : write_to_array
   args : (Tensor i, Tensor x)
   output : Tensor[](out)
-
-- op: c_softmax_with_cross_entropy
-  args: (Tensor logits, Tensor label,  int64_t ignore_index=-100, int ring_id=0, int rank=0, int nranks=0)
-  output: Tensor(softmax), Tensor(loss)
-  infer_meta:
-    func : CSoftmaxWithCrossEntropyInferMeta
-    spmd_rule : CSoftmaxWithCrossEntropyInferSpmd
-    param: [logits, label, ignore_index, rank, nranks]
-  kernel:
-    func: c_softmax_with_cross_entropy
-    data_type : logits
-    param: [logits, label, ignore_index, rank, nranks]
-  backward: c_softmax_with_cross_entropy_grad
 
 - op: c_softmax_with_multi_label_cross_entropy
   args: (Tensor logits, Tensor label, Tensor smooth_weight, int64_t ignore_index=-100, bool sum_multi_label_loss=true, int ring_id=0, int rank=0, int nranks=0)

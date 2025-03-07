@@ -13,7 +13,6 @@
 // limitations under the License.
 
 #include "paddle/cinn/ir/group_schedule/dy_shape_group_scheduler.h"
-#include "paddle/cinn/common/cas.h"
 #include "paddle/cinn/hlir/framework/pir/trivial_op_impl.h"
 #include "paddle/cinn/ir/group_schedule/config/schedule_config_manager.h"
 #include "paddle/cinn/ir/group_schedule/tactic/align_iter_space_tactic.h"
@@ -21,8 +20,10 @@
 #include "paddle/cinn/ir/group_schedule/tactic/compute_inline_tactic.h"
 #include "paddle/cinn/ir/group_schedule/tactic/tile_broadcast_tactic.h"
 #include "paddle/cinn/ir/group_schedule/tactic/tile_first_general_tactic.h"
+#include "paddle/cinn/ir/group_schedule/tactic/tile_transpose_tactic.h"
 #include "paddle/cinn/ir/ir_analyzer/ir_analyzer.h"
 #include "paddle/cinn/ir/op/ir_operators.h"
+#include "paddle/cinn/optim/ir_simplify.h"
 #include "paddle/common/enforce.h"
 
 namespace cinn {
@@ -36,6 +37,7 @@ void DynamicShapeGroupScheduler::Init() {
   InitBuckets();
   tactics_.emplace_back(CreateAlignIterSpaceTactic());
   tactics_.emplace_back(CreateTileBroadcastTactic());
+  tactics_.emplace_back(CreateTileTransposeTactic());
   tactics_.emplace_back(CreateTileFirstGeneralTactic());
   tactics_.emplace_back(CreateComputeInlineTactic());
   tactics_.emplace_back(CreateComputeAtReductionTactic());

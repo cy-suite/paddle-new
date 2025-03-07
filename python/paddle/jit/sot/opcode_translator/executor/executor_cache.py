@@ -25,7 +25,9 @@ from ...psdb import NO_FALLBACK_CODES
 from ...utils import (
     ENV_SOT_ALLOW_DYNAMIC_SHAPE,
     BreakGraphError,
+    CompileCountInfo,
     FallbackError,
+    InfoCollector,
     InnerError,
     Singleton,
     is_strict_mode,
@@ -33,6 +35,7 @@ from ...utils import (
     log_do,
 )
 from ..custom_code import CustomCode
+from .function_graph import FunctionGraph
 from .guard import Guard
 from .opcode_executor import OpcodeExecutor, OpcodeExecutorBase
 
@@ -130,7 +133,7 @@ class OpcodeExecutorCache(metaclass=Singleton):
                 if guard_result:
                     log(
                         2,
-                        f"[Cache]: Cache hit, Guard is \n{getattr(guard_fn, 'expr', 'None')}\n",
+                        f"[Cache] Cache hit, Guard is \n{getattr(guard_fn, 'expr', 'None')}\n",
                     )
                     return custom_code
                 else:
@@ -140,17 +143,21 @@ class OpcodeExecutorCache(metaclass=Singleton):
                     )
                     log(
                         2,
-                        f"[Cache]: Cache miss, Guard is \n{getattr(guard_fn, 'expr', 'None')}\n",
+                        f"[Cache] Cache miss, Guard is \n{getattr(guard_fn, 'expr', 'None')}\n",
                     )
                     log_do(
                         2,
                         self.analyse_guard_error(guard_fn, frame),
                     )
             except Exception as e:
-                log(2, f"[Cache]: Guard function error: {e}\n")
+                log(2, f"[Cache] Guard function error: {e}\n")
                 log(
                     2,
-                    f"[Cache]: Guard string is: {getattr(guard_fn, 'expr', 'None')}\n",
+                    f"[Cache] Guard is \n{getattr(guard_fn, 'expr', 'None')}\n",
+                )
+                log_do(
+                    2,
+                    self.analyse_guard_error(guard_fn, frame),
                 )
 
                 continue
@@ -205,8 +212,9 @@ class OpcodeExecutorCache(metaclass=Singleton):
                     result = guard(frame)
                 except Exception as e:
                     print(
-                        f"[Cache]: skip checking {guard_str}\n         because error occurred {e}"
+                        f"[Cache] Error occurred when checking guard {guard_str}: {e}"
                     )
+                    return
                 if result is False:
                     print(f"[Cache]: missed at {guard_str}")
                     return
@@ -228,11 +236,13 @@ def start_translate(
     Returns:
         tuple[CustomCode, Guard | None]: The translated code object and its guard function, or None if translation fails.
     """
-    simulator = OpcodeExecutor(frame, **kwargs)
+    graph = FunctionGraph(frame.f_code, frame.f_globals, **kwargs)
+    simulator = OpcodeExecutor(frame, graph)
     try:
         simulator.check_code_simulatable()
+        InfoCollector().attach(CompileCountInfo, frame.f_code)
         with sot_simulation_mode_guard(True):
-            new_custom_code, guard_fn = simulator.transform()
+            new_custom_code, guard_fn = simulator.transform(frame)
         if not simulator._graph.need_cache:
             return (
                 CustomCode(None, True),
@@ -254,7 +264,7 @@ def start_translate(
             raise
         log(
             2,
-            f"Unsupport Frame is {frame.f_code}, error message is: \n"
+            f"Unsupported Frame is {frame.f_code}, error message is: \n"
             + "".join(traceback.format_exception(type(e), e, e.__traceback__)),
         )
         # simulation not complete, not sure whether this code has sir, set disable_eval_frame = False

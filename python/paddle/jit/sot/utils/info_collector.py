@@ -14,14 +14,22 @@
 
 from __future__ import annotations
 
-from abc import ABC, abstractclassmethod
+import atexit
+import sys
+from abc import ABC, abstractmethod
+from enum import Enum
 from pathlib import Path
-from typing import ClassVar, NamedTuple
+from typing import TYPE_CHECKING, ClassVar, NamedTuple
 
 from typing_extensions import Self
 
 from .envs import ENV_SOT_COLLECT_INFO
 from .utils import Singleton
+
+if TYPE_CHECKING:
+    import types
+
+    from .exceptions import BreakGraphReasonBase
 
 
 def try_import_graphviz():
@@ -33,33 +41,65 @@ def try_import_graphviz():
         return None
 
 
+class InfoType(Enum):
+    STEP_INFO = 0
+    E2E_INFO = 1
+
+
 class InfoCollector(metaclass=Singleton):
     def __init__(self):
-        self._info: dict[str, list[StepInfoBase]] = {}
+        self._step_info: dict[str, list[InfoBase]] = {}
+        self._e2e_info: dict[str, list[InfoBase]] = {}
 
-    def attach(self, cls: type[StepInfoBase], *args, **kwargs) -> None:
+    def get_info_dict(self, info_type: InfoType) -> dict[str, list[InfoBase]]:
+        if info_type == InfoType.STEP_INFO:
+            return self._step_info
+        else:
+            return self._e2e_info
+
+    def attach(self, cls: type[InfoBase], *args, **kwargs) -> None:
         if self.need_collect(cls):
             info = cls(*args, **kwargs)
             self.register(info)
 
-    def register(self, info: StepInfoBase) -> None:
+    def register(self, info: InfoBase) -> None:
         info_class_name = info.__class__.__name__
-        self._info.setdefault(info_class_name, [])
-        self._info[info_class_name].append(info)
+        info_type = info.TYPE
+        info_dict = self.get_info_dict(info_type)
+        info_dict.setdefault(info_class_name, [])
+        info_dict[info_class_name].append(info)
 
-    def need_collect(self, cls: type[StepInfoBase]) -> bool:
-        return cls.SHORT_NAME in ENV_SOT_COLLECT_INFO.get()
+    def need_collect(self, cls: type[InfoBase]) -> bool:
+        return cls.SHORT_NAME in ENV_SOT_COLLECT_INFO.get_with_cache()
+
+    def clear_step_info(self):
+        self._step_info.clear()
+
+    def clear_e2e_info(self):
+        self._e2e_info.clear()
 
     def clear(self):
-        self._info.clear()
+        self.clear_step_info()
+        self.clear_e2e_info()
 
-    def print_report(self):
-        if self._info:
-            print(self.generate_report())
+    def print_step_report(self):
+        self.print_report(InfoType.STEP_INFO)
 
-    def generate_report(self) -> str:
+    def print_e2e_info_atexit(self) -> None:
+        def atexit_hook():
+            self.print_report(InfoType.E2E_INFO)
+            sys.stdout.flush()
+            self.clear()
+
+        atexit.register(atexit_hook)
+
+    def print_report(self, info_type: InfoType) -> None:
+        if info_dict := self.get_info_dict(info_type):
+            print(self.generate_report(info_dict))
+
+    def generate_report(self, info_dict: dict[str, list[InfoBase]]) -> str:
         report = ""
-        for info_class_name, info_list in self._info.items():
+        for info_class_name, info_list in info_dict.items():
             cls = info_list[0].__class__
             report += f"{info_class_name} ({cls.SHORT_NAME}):\n"
             report += cls.summary(info_list)
@@ -67,18 +107,23 @@ class InfoCollector(metaclass=Singleton):
         return report
 
 
-class StepInfoBase(ABC):
+InfoCollector().print_e2e_info_atexit()
+
+
+class InfoBase(ABC):
     SHORT_NAME: ClassVar[str]
+    TYPE: ClassVar[InfoType]
 
     def __init__(self): ...
 
     @classmethod
-    @abstractclassmethod
+    @abstractmethod
     def summary(cls, history: list[Self]) -> str: ...
 
 
-class NewSymbolHitRateInfo(StepInfoBase):
+class NewSymbolHitRateInfo(InfoBase):
     SHORT_NAME = "new_symbol_hit_rate"
+    TYPE = InfoType.STEP_INFO
 
     def __init__(
         self, input_tensor_ids: list[int], output_tensor_ids: list[int]
@@ -110,8 +155,9 @@ class NewSymbolHitRateInfo(StepInfoBase):
         return summary
 
 
-class SubGraphRelationInfo(StepInfoBase):
+class SubGraphRelationInfo(InfoBase):
     SHORT_NAME = "subgraph_relation"
+    TYPE = InfoType.STEP_INFO
     STEP_UNIQUE_ID = 0
 
     class ConcreteShapeInfo(NamedTuple):
@@ -172,9 +218,9 @@ class SubGraphRelationInfo(StepInfoBase):
             dot.node(
                 subgraph_id,
                 f"Subgraph {i} ({info.subgraph_name}, size={info.graph_size})",
-                shape='oval',
-                fillcolor='cyan' if info.is_first_call else None,
-                style='filled' if info.is_first_call else None,
+                shape="oval",
+                fillcolor="cyan" if info.is_first_call else None,
+                style="filled" if info.is_first_call else None,
             )
             for shape_info in info.input_shape_infos:
                 dot.edge(
@@ -192,5 +238,90 @@ class SubGraphRelationInfo(StepInfoBase):
         directory = Path(".") / "subgraph_relation"
         directory.mkdir(exist_ok=True, parents=True)
         filename = f"subgraph_relation_{cls.STEP_UNIQUE_ID}"
-        dot.render(directory / filename, format="png", cleanup=True)
-        return f"Please check {directory / filename}.png for subgraph relation"
+        dot.render(directory / filename, format="svg", cleanup=True)
+        return f"Please check {directory / filename}.svg for subgraph relation"
+
+
+class CompileCountInfo(InfoBase):
+    SHORT_NAME = "compile_count"
+    TYPE = InfoType.E2E_INFO
+
+    def __init__(self, code: types.CodeType):
+        super().__init__()
+        self.code = code
+
+    @classmethod
+    def summary(cls, history: list[Self]) -> str:
+        if len(history) == 0:
+            return f"No {cls.SHORT_NAME} info"
+        code_count = {}
+        for info in history:
+            code_count[info.code] = code_count.get(info.code, 0) + 1
+        summary_lines = []
+        for code, count in sorted(
+            code_count.items(), key=lambda x: x[1], reverse=True
+        ):
+            filename, lineno = code.co_filename, code.co_firstlineno
+            summary_lines.append(
+                f"    {code.co_name} ({filename}:{lineno}): {count}"
+            )
+        summary = "\n".join(summary_lines)
+        return summary
+
+
+class BreakGraphReasonInfo(InfoBase):
+    SHORT_NAME = "breakgraph_reason"
+    TYPE = InfoType.E2E_INFO
+
+    def __init__(self, reason: BreakGraphReasonBase):
+        super().__init__()
+        self.reason = reason
+
+    @classmethod
+    def summary(cls, history: list[Self]) -> str:
+        reason_dict = {}
+
+        for info in history:
+            name = info.reason.__class__.__name__
+            if name not in reason_dict:
+                reason_dict[name] = []
+            reason_dict[name].append(str(info.reason))
+
+        reason_list = list(reason_dict.items())
+        reason_list.sort(key=lambda x: len(x[1]), reverse=True)
+
+        return "\n".join(
+            [
+                f"{name} ({len(reasons)}):\n\t" + "\n\t".join(reasons)
+                for name, reasons in reason_list
+            ]
+        )
+
+    @staticmethod
+    def collect_break_graph_reason(reason: BreakGraphReasonBase):
+        if not InfoCollector().need_collect(BreakGraphReasonInfo):
+            return
+
+        InfoCollector().attach(BreakGraphReasonInfo, reason)
+
+
+class SubGraphInfo(InfoBase):
+    SHORT_NAME = "subgraph_info"
+    TYPE = InfoType.STEP_INFO
+
+    def __init__(self, graph, op_num):
+        super().__init__()
+        self.graph = graph
+        self.op_num = op_num
+
+    def __str__(self):
+        return f"OpNum: {self.op_num}\n{self.graph}"
+
+    @classmethod
+    def summary(cls, history: list[Self]) -> str:
+        return "\n".join(
+            [
+                f"SubGraphIdx: {idx} {info}"
+                for idx, info in enumerate(map(str, history))
+            ]
+        )

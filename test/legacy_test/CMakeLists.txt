@@ -95,8 +95,6 @@ if(((NOT WITH_ROCM) AND (NOT WITH_GPU)) OR WIN32)
   list(REMOVE_ITEM TEST_OPS test_memcpy_op)
   list(REMOVE_ITEM TEST_OPS test_raw_program_optimizer)
   list(REMOVE_ITEM TEST_OPS test_disable_signal_handler)
-  list(REMOVE_ITEM TEST_OPS test_fleet_executor_multi_devices)
-  list(REMOVE_ITEM TEST_OPS test_fleet_exe_dist_model_tensor)
   list(REMOVE_ITEM TEST_OPS test_async_offload_reload)
 endif()
 
@@ -820,7 +818,12 @@ endif()
 set_tests_properties(test_tensordot PROPERTIES TIMEOUT 200)
 set_tests_properties(test_partial_eager_deletion_transformer PROPERTIES TIMEOUT
                                                                         120)
-set_tests_properties(test_dropout_op PROPERTIES TIMEOUT 120)
+set_tests_properties(
+  test_dropout_op PROPERTIES TIMEOUT 120 ENVIRONMENT
+                             "FLAGS_comp_skip_default_ops=False")
+set_tests_properties(test_lookup_table_v2_op
+                     PROPERTIES ENVIRONMENT "FLAGS_comp_skip_default_ops=False")
+
 set_tests_properties(test_imperative_ocr_attention_model PROPERTIES TIMEOUT 120)
 set_tests_properties(test_nn_grad PROPERTIES TIMEOUT 180)
 set_tests_properties(test_elementwise_sub_op PROPERTIES TIMEOUT 120)
@@ -854,7 +857,7 @@ set_tests_properties(test_imperative_transformer_sorted_gradient
                      PROPERTIES TIMEOUT 120)
 set_tests_properties(test_imperative_optimizer PROPERTIES TIMEOUT 250)
 set_tests_properties(test_imperative_optimizer_v2 PROPERTIES TIMEOUT 250)
-set_tests_properties(test_activation_op PROPERTIES TIMEOUT 600)
+set_tests_properties(test_activation_op PROPERTIES TIMEOUT 270)
 set_tests_properties(test_normal PROPERTIES TIMEOUT 120)
 set_tests_properties(test_cyclic_cifar_dataset PROPERTIES TIMEOUT 120)
 set_tests_properties(test_fused_elemwise_activation_op PROPERTIES TIMEOUT 270)
@@ -889,6 +892,8 @@ set_tests_properties(test_dataset_imdb PROPERTIES TIMEOUT 300)
 set_tests_properties(test_callback_wandb PROPERTIES TIMEOUT 60)
 set_tests_properties(test_jit_save_load PROPERTIES TIMEOUT 100)
 set_tests_properties(test_pool2d_op PROPERTIES TIMEOUT 120)
+
+set_tests_properties(test_baddbmm_op PROPERTIES TIMEOUT 100)
 
 if(WITH_COVERAGE)
   set_tests_properties(test_hapi_hub PROPERTIES TIMEOUT 300)
@@ -1086,7 +1091,7 @@ endif()
 foreach(STATIC_BUILD_TEST ${STATIC_BUILD_TESTS})
   py_test_modules(
     ${STATIC_BUILD_TEST}_static_build MODULES ${STATIC_BUILD_TEST} ENVS
-    FLAGS_new_executor_static_build=true)
+    FLAGS_new_executor_static_build=true FLAGS_comp_skip_default_ops=False)
 endforeach()
 
 py_test_modules(test_adam_op_multi_thread MODULES test_adam_op ENVS

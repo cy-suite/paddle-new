@@ -16,6 +16,7 @@
 
 #include <map>
 #include <optional>
+#include <regex>
 #include <string>
 #include <vector>
 #include "paddle/cinn/common/cinn_value.h"
@@ -29,6 +30,7 @@
 #include "paddle/cinn/ir/tensor.h"
 #include "paddle/cinn/ir/utils/ir_copy.h"
 #include "paddle/cinn/optim/ir_simplify.h"
+#include "paddle/cinn/optim/simplify_util.h"
 #include "paddle/common/enforce.h"
 #include "paddle/common/errors.h"
 
@@ -84,11 +86,11 @@ Expr Cast::Make(Type t, Expr v) {
 #undef __CAST_TO_TYPE
 
   // Cast indexExpr without `cast` and `load`
-  if (common::VerifyIndex(v) == common::IndexType::kValid && t == Int(64)) {
+  if (optim::VerifyIndex(v) == optim::IndexType::kValid && t == Int(64)) {
     v->convert_int32_to_int64();
     return v;
   }
-  if (common::VerifyIndex(v) == common::IndexType::kValid && t == Int(32)) {
+  if (optim::VerifyIndex(v) == optim::IndexType::kValid && t == Int(32)) {
     v->convert_int64_to_int32();
     return v;
   }
@@ -372,7 +374,15 @@ void Let::Verify() const {
 Type Let::type() const { return symbol.type(); }
 
 Expr _Var_::Make(const std::string &name, const Type &type) {
+  auto MatchSymbol = [](const std::string &str) {
+    std::regex pattern("^S[0-9]+$");
+    return std::regex_match(str, pattern);
+  };
   auto node = new _Var_(name, type);
+  // Since `var name` is used independently in many places, and `var` is rebuilt
+  // based on `name` later, regular matching is temporarily used here to
+  // determine whether it is a symbol.
+  if (MatchSymbol(name)) node->is_symbolic_constant = true;
   return Expr(node);
 }
 
@@ -1322,13 +1332,6 @@ Expr Reduce::Make(Reduce::ReduceType reduce_type,
   }
 
   n->set_type(body.type());
-
-  if (reduce_type == ir::Reduce::kSum &&
-      (body.type().is_int(32) || body.type().is_bool())) {
-    n->body->set_type(Int(64));
-    n->set_type(Int(64));
-    n->init->set_type(Int(64));
-  }
 
   return Expr(n);
 }

@@ -35,11 +35,12 @@ void FlashAttnGradKernelBase(const Context& ctx,
                              const paddle::optional<DenseTensor>& attn_mask,
                              const DenseTensor& dout,
                              const int batch_size,
-                             const int64_t max_seqlen_q,
-                             const int64_t max_seqlen_k,
+                             const Scalar& max_seqlen_q_,
+                             const Scalar& max_seqlen_k_,
                              const int num_heads,
                              const int num_heads_k,
                              const int head_size,
+                             const int head_size_v,
                              float scale,
                              float dropout,
                              bool causal,
@@ -95,6 +96,9 @@ void FlashAttnGradKernelBase(const Context& ctx,
   XPUType* dq_data = reinterpret_cast<XPUType*>(dq->data<T>());
   XPUType* dk_data = reinterpret_cast<XPUType*>(dk->data<T>());
   XPUType* dv_data = reinterpret_cast<XPUType*>(dv->data<T>());
+
+  int64_t max_seqlen_q = max_seqlen_q_.to<int64_t>();
+  int64_t max_seqlen_k = max_seqlen_k_.to<int64_t>();
 
   // get seed offset
   const int64_t* seed_offset_data = seed_offset.data<int64_t>();
@@ -164,7 +168,7 @@ void FlashAttnGradKernelBase(const Context& ctx,
       {},                                         // alibi_slopes_shape
       -1,                                         // window_size_left
       -1,                                         // window_size_right
-      -1                                          // v_head_dim
+      head_size_v                                 // v_head_dim
   );
   PADDLE_ENFORCE_XDNN_SUCCESS(r, "mha_varlen_bwd");
 }
@@ -182,8 +186,8 @@ void FlashAttnUnpaddedGradKernel(const Context& ctx,
                                  const DenseTensor& seed_offset,
                                  const paddle::optional<DenseTensor>& attn_mask,
                                  const DenseTensor& dout,
-                                 int64_t max_seqlen_q,
-                                 int64_t max_seqlen_k,
+                                 const Scalar& max_seqlen_q,
+                                 const Scalar& max_seqlen_k,
                                  float scale,
                                  float dropout,
                                  bool causal,
@@ -199,6 +203,7 @@ void FlashAttnUnpaddedGradKernel(const Context& ctx,
   const int64_t batch_size = cu_seqlens_q.numel() - 1;
   const int64_t num_heads = dims[1];
   const int64_t head_size = dims[2];
+  const int64_t head_size_v = v.dims()[2];
   const int64_t num_heads_k = k.dims()[1];
 
   api::VectorParam<int> qlod{cu_seqlens_q.data<int>(),
@@ -225,6 +230,7 @@ void FlashAttnUnpaddedGradKernel(const Context& ctx,
                              num_heads,
                              num_heads_k,
                              head_size,
+                             head_size_v,
                              scale,
                              dropout,
                              causal,
@@ -265,14 +271,15 @@ void FlashAttnGradKernel(const Context& ctx,
   const int64_t num_heads = dims[2];
   const int64_t head_size_og = dout.dims()[3];
   const int64_t head_size = dims[3];
+  const int64_t head_size_v = v.dims()[3];
   const int64_t seqlen_k = k.dims()[1];
   const int64_t num_heads_k = k.dims()[2];
 
   PADDLE_ENFORCE_EQ(
       head_size_og,
-      head_size,
+      head_size_v,
       common::errors::InvalidArgument(
-          "flash_attn_bwd receive input with head_size_og == head_size"));
+          "flash_attn_bwd receive input with head_size_og == head_size_v"));
 
   // lod info
   std::vector<int> qlod_vec = {0};
@@ -303,6 +310,7 @@ void FlashAttnGradKernel(const Context& ctx,
                              num_heads,
                              num_heads_k,
                              head_size,
+                             head_size_v,
                              0.0,
                              dropout,
                              causal,

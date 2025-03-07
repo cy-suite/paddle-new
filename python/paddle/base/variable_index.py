@@ -764,7 +764,16 @@ def get_tensor_with_basic_indexing(
                 stride = attrs['strides']
             if use_strided_slice:
                 # TODO(zoooo0820): support strided_slice_array until PIR API is ready
-
+                if in_pir_mode():
+                    if isinstance(st, (list, tuple)):
+                        if paddle.utils._contain_var(st):
+                            st = paddle.utils.get_int_tensor_list(st)
+                    if isinstance(end, (list, tuple)):
+                        if paddle.utils._contain_var(end):
+                            end = paddle.utils.get_int_tensor_list(end)
+                    if isinstance(stride, (list, tuple)):
+                        if paddle.utils._contain_var(stride):
+                            stride = paddle.utils.get_int_tensor_list(stride)
                 out = paddle._C_ops.strided_slice(x, axes, st, end, stride)
                 if len(decrease_axes) > 0:
                     out = paddle._C_ops.squeeze(out, decrease_axes)
@@ -910,7 +919,7 @@ def _getitem_static(x, indices):
 
 def parse_bool_and_broadcast_indices(indices):
     # deal with multiple Tensors and translating bool tensor to int tensor.
-    # In static mode, bool-tensor cannot be broadcasted since its corresponding int tensor's shape cannot be infered.
+    # In static mode, bool-tensor cannot be broadcasted since its corresponding int tensor's shape cannot be inferred.
     for i, indice in enumerate(indices):
         if (
             indice.dtype == paddle.bool

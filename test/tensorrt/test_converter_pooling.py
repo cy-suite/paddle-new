@@ -213,6 +213,56 @@ class TestPoolingTRTCase6Pattern(TensorRTBaseTest):
         self.check_trt_result()
 
 
+class TestPoolingTRTCase7Pattern(TensorRTBaseTest):
+    def setUp(self):
+        self.python_api = pool2d_api
+        self.api_args = {
+            "x": np.random.randn(1, 3, 32, 32).astype("float32"),
+            "ksize": [2, 3],
+            "strides": [1, 2],
+            "paddings": [0, 2],
+            "ceil_mode": True,
+            "exclusive": True,
+            "data_format": "NCHW",
+            "pooling_type": "max",
+            "global_pooling": False,
+            "adaptive": False,
+            "padding_algorithm": "EXPLICIT",
+        }
+        self.program_config = {"feed_list": ["x"]}
+        self.min_shape = {"x": [1, 3, 32, 32]}
+        self.opt_shape = {"x": [1, 3, 32, 32]}
+        self.max_shape = {"x": [2, 3, 32, 32]}
+
+    def test_trt_result(self):
+        self.check_trt_result()
+
+
+class TestPoolingTRTCase8Pattern(TensorRTBaseTest):
+    def setUp(self):
+        self.python_api = pool2d_api
+        self.api_args = {
+            "x": np.random.randn(1, 3, 32, 32).astype("float32"),
+            "ksize": [2, 3],
+            "strides": [1, 2],
+            "paddings": [0, 2],
+            "ceil_mode": False,
+            "exclusive": True,
+            "data_format": "NCHW",
+            "pooling_type": "max",
+            "global_pooling": False,
+            "adaptive": True,
+            "padding_algorithm": "EXPLICIT",
+        }
+        self.program_config = {"feed_list": ["x"]}
+        self.min_shape = {"x": [1, 3, 32, 32]}
+        self.opt_shape = {"x": [1, 3, 32, 32]}
+        self.max_shape = {"x": [2, 3, 32, 32]}
+
+    def test_trt_result(self):
+        self.check_trt_result()
+
+
 class TestPoolingTRTMarker(TensorRTBaseTest):
     def setUp(self):
         self.python_api = pool2d_api
@@ -234,6 +284,202 @@ class TestPoolingTRTMarker(TensorRTBaseTest):
 
     def test_trt_result(self):
         self.check_marker(expected_result=False)
+
+
+def pool3d_api(
+    x,
+    ksize=[],
+    strides=[],
+    paddings=[],
+    ceil_mode=False,
+    exclusive=True,
+    data_format="NCHW",
+    pooling_type="max",
+    global_pooling=False,
+    adaptive=False,
+    padding_algorithm="EXPLICIT",
+):
+    return paddle._C_ops.pool3d(
+        x,
+        ksize,
+        strides,
+        paddings,
+        ceil_mode,
+        exclusive,
+        data_format,
+        pooling_type,
+        global_pooling,
+        adaptive,
+        padding_algorithm,
+    )
+
+
+class TestPooling3dTRTCase1Pattern(TensorRTBaseTest):
+    def setUp(self):
+        self.python_api = pool3d_api
+        self.api_args = {
+            "x": np.random.randn(1, 3, 5, 5, 5).astype("float32"),
+            "ksize": [1, 1, 1],
+            "strides": [1, 1, 1],
+            "paddings": [0, 0, 0],
+            "ceil_mode": False,
+            "exclusive": True,
+            "data_format": "NCHW",
+            "pooling_type": "avg",
+            "global_pooling": False,
+            "adaptive": False,
+            "padding_algorithm": "EXPLICIT",
+        }
+        self.program_config = {"feed_list": ["x"]}
+        self.min_shape = {"x": [1, 3, 5, 5, 5]}
+        self.opt_shape = {"x": [1, 3, 5, 5, 5]}
+        self.max_shape = {"x": [2, 3, 5, 5, 5]}
+
+    def test_fp32_trt_result(self):
+        self.check_trt_result()
+
+    def test_fp16_trt_result(self):
+        self.check_trt_result(precision_mode="fp16")
+
+
+class TestPooling3dTRTCase2Pattern(TensorRTBaseTest):
+    def setUp(self):
+        self.python_api = pool3d_api
+        self.api_args = {
+            "x": np.ones([1, 3, 5, 5, 5]).astype("float32"),
+            "ksize": [1, 1, 1],
+            "strides": [1, 1, 1],
+            "paddings": [0, 0, 0],
+            "ceil_mode": False,
+            "exclusive": True,
+            "data_format": "NCHW",
+            "pooling_type": "avg",
+            "global_pooling": False,
+            "adaptive": True,
+            "padding_algorithm": "EXPLICIT",
+        }
+        self.program_config = {"feed_list": ["x"]}
+        self.min_shape = {"x": [1, 3, 5, 5, 5]}
+        self.opt_shape = {"x": [1, 3, 5, 5, 5]}
+        self.max_shape = {"x": [2, 3, 5, 5, 5]}
+
+    def test_fp32_trt_result(self):
+        self.check_trt_result()
+
+    def test_fp16_trt_result(self):
+        self.check_trt_result(precision_mode="fp16")
+
+
+class TestPooling3dTRTCase3Pattern(TensorRTBaseTest):
+    def setUp(self):
+        self.python_api = pool3d_api
+        self.api_args = {
+            "x": np.ones([1, 3, 5, 5, 5]).astype("float32"),
+            "ksize": [1, 1, 1],
+            "strides": [1, 1, 1],
+            "paddings": [0, 0, 0],
+            "ceil_mode": False,
+            "exclusive": True,
+            "data_format": "NCHW",
+            "pooling_type": "avg",
+            "global_pooling": True,
+            "adaptive": False,
+            "padding_algorithm": "EXPLICIT",
+        }
+        self.program_config = {"feed_list": ["x"]}
+        self.min_shape = {"x": [1, 3, 5, 5, 5]}
+        self.opt_shape = {"x": [1, 3, 5, 5, 5]}
+        self.max_shape = {"x": [2, 3, 5, 5, 5]}
+
+    def test_fp32_trt_result(self):
+        self.check_trt_result()
+
+    def test_fp16_trt_result(self):
+        self.check_trt_result(precision_mode="fp16")
+
+
+class TestPooling3dTRTCase4Pattern(TensorRTBaseTest):
+    def setUp(self):
+        self.python_api = pool3d_api
+        self.api_args = {
+            "x": np.random.randn(1, 3, 5, 5, 5).astype("float32"),
+            "ksize": [1, 1, 1],
+            "strides": [1, 1, 1],
+            "paddings": [0, 0, 0],
+            "ceil_mode": False,
+            "exclusive": True,
+            "data_format": "NCHW",
+            "pooling_type": "avg",
+            "global_pooling": False,
+            "adaptive": False,
+            "padding_algorithm": "SAME",
+        }
+        self.program_config = {"feed_list": ["x"]}
+        self.min_shape = {"x": [1, 3, 5, 5, 5]}
+        self.opt_shape = {"x": [1, 3, 5, 5, 5]}
+        self.max_shape = {"x": [2, 3, 5, 5, 5]}
+
+    def test_fp32_trt_result(self):
+        self.check_trt_result()
+
+    def test_fp16_trt_result(self):
+        self.check_trt_result(precision_mode="fp16")
+
+
+class TestPooling3dTRTCase5Pattern(TensorRTBaseTest):
+    def setUp(self):
+        self.python_api = pool3d_api
+        self.api_args = {
+            "x": np.random.randn(1, 3, 5, 5, 5).astype("float32"),
+            "ksize": [1, 1, 1],
+            "strides": [1, 1, 1],
+            "paddings": [0, 0, 0],
+            "ceil_mode": False,
+            "exclusive": True,
+            "data_format": "NCHW",
+            "pooling_type": "avg",
+            "global_pooling": False,
+            "adaptive": False,
+            "padding_algorithm": "VALID",
+        }
+        self.program_config = {"feed_list": ["x"]}
+        self.min_shape = {"x": [1, 3, 5, 5, 5]}
+        self.opt_shape = {"x": [1, 3, 5, 5, 5]}
+        self.max_shape = {"x": [2, 3, 5, 5, 5]}
+
+    def test_fp32_trt_result(self):
+        self.check_trt_result()
+
+    def test_fp16_trt_result(self):
+        self.check_trt_result(precision_mode="fp16")
+
+
+class TestPooling3dTRTCase6Pattern(TensorRTBaseTest):
+    def setUp(self):
+        self.python_api = pool3d_api
+        self.api_args = {
+            "x": np.ones([1, 3, 5, 5, 5]).astype("float32"),
+            "ksize": [1, 1, 1],
+            "strides": [1, 1, 1],
+            "paddings": [0, 0, 0],
+            "ceil_mode": False,
+            "exclusive": True,
+            "data_format": "NCHW",
+            "pooling_type": "max",
+            "global_pooling": True,
+            "adaptive": False,
+            "padding_algorithm": "EXPLICIT",
+        }
+        self.program_config = {"feed_list": ["x"]}
+        self.min_shape = {"x": [1, 3, 5, 5, 5]}
+        self.opt_shape = {"x": [1, 3, 5, 5, 5]}
+        self.max_shape = {"x": [2, 3, 5, 5, 5]}
+
+    def test_fp32_trt_result(self):
+        self.check_trt_result()
+
+    def test_fp16_trt_result(self):
+        self.check_trt_result(precision_mode="fp16")
 
 
 if __name__ == '__main__':

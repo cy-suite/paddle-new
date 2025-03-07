@@ -2162,7 +2162,7 @@ std::vector<pir::Type> ArrayWrite_Op::InferMeta(
       x_type.dims(),
       dense_array_out.layout());
   // update array's dims as x's dims.
-  // TOOD(chenxi67) Do not change if dim is set by custom
+  // TODO(chenxi67) Do not change if dim is set by custom
   if (array_.type().isa<paddle::dialect::AllocatedDenseTensorArrayType>()) {
     array_.set_type(paddle::dialect::AllocatedDenseTensorArrayType::get(
         pir::IrContext::Instance(),
@@ -2190,7 +2190,7 @@ bool ArrayWrite_Op::InferSymbolicShape(
       symbol::ShapeOrDataDimExprs{
           symbol::RankedTensorArrayShapeOrDataDimExprs(x_shape)});
   // update array's shape as x's shape.
-  // TOOD(ooooo) Do not change if shape is set by custom, similar to infer_meta
+  // TODO(ooooo) Do not change if shape is set by custom, similar to infer_meta
   infer_context->SetShapeOrDataForValue(
       array(),
       symbol::ShapeOrDataDimExprs{
@@ -3380,6 +3380,7 @@ void ExpandOp::Build(pir::Builder &builder,
       ExpandOp::InferMeta(argument_inputs, &argument_attributes);
 
   argument.AddOutputs(argument_outputs.begin(), argument_outputs.end());
+  argument.AddAttributes(argument_attributes);
   ::pir::PassStopGradientsDefaultly(argument);
 }
 
@@ -3415,6 +3416,7 @@ void ExpandOp::Build(pir::Builder &builder,
       ExpandOp::InferMeta(argument_inputs, &argument_attributes);
 
   argument.AddOutputs(argument_outputs.begin(), argument_outputs.end());
+  argument.AddAttributes(argument_attributes);
   ::pir::PassStopGradientsDefaultly(argument);
 }
 
@@ -3434,6 +3436,7 @@ void ExpandOp::Build(pir::Builder &builder,
       ExpandOp::InferMeta(argument_inputs, &argument_attributes);
 
   argument.AddOutputs(argument_outputs.begin(), argument_outputs.end());
+  argument.AddAttributes(argument_attributes);
   ::pir::PassStopGradientsDefaultly(argument);
 }
 
@@ -3695,6 +3698,45 @@ std::vector<pir::Type> ExpandOp::InferMeta(
       dense_out.layout(),
       dense_out.lod(),
       dense_out.offset());
+
+  // Auto Parallel condition
+#ifdef PADDLE_WITH_DISTRIBUTE
+  ProcessMeshAttribute op_mesh;
+  if (HasDistInput(input_values, &op_mesh)) {
+    CvtAllInputsToDist(input_values, op_mesh);
+    auto ctx = pir::IrContext::Instance();
+    std::vector<pir::Attribute> dist_operand_attrs, dist_result_attrs;
+    auto dist_meta_x =
+        CvtToDistMetaTensor(x_.type().dyn_cast<DistDenseTensorType>());
+    // Todo(jeff41404): When expand adds spmd rules, synchronous modifications
+    // are required here.
+    auto spmd_info =
+        phi::distributed::VariadicReplicatedInferSpmdDynamic(dist_meta_x);
+    PADDLE_ENFORCE_EQ(
+        spmd_info.first.size(),
+        1u,
+        common::errors::Unavailable(
+            "Size of spmd_info.first for op[ExpandOp]is unexpected."));
+    for (auto &arg_dist : spmd_info.first) {
+      dist_operand_attrs.push_back(CvtToPirAttr(arg_dist));
+    }
+
+    for (int i = 1; i < 2; ++i) {
+      dist_operand_attrs.push_back(GetTensorDistAttr(input_values[i].type()));
+    }
+
+    auto dist_attr_out =
+        CreateReplicatedDistAttr(out_dense_tensor_type, op_mesh);
+
+    dist_result_attrs.push_back(dist_attr_out);
+    argument_outputs.push_back(
+        CvtToPirDistType(out_dense_tensor_type, dist_attr_out));
+
+    (*p_attributes)[kAttrOpDistAttr] = OperationDistAttribute::get(
+        ctx, op_mesh, dist_operand_attrs, dist_result_attrs);
+    return argument_outputs;
+  }
+#endif
   argument_outputs.push_back(out_dense_tensor_type);
   return argument_outputs;
 }

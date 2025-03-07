@@ -23,7 +23,6 @@
 #include <string>
 #include <vector>
 
-#include "paddle/cinn/common/cas.h"
 #include "paddle/cinn/common/integer_set.h"
 #include "paddle/cinn/common/ir_util.h"
 #include "paddle/cinn/ir/ir.h"
@@ -550,7 +549,7 @@ std::vector<IterRange> CalculateTensorRegions(
     auto range = GetAccessedRange(binded_index, loop_vars, loop_ranges);
 
     // in generally, the range should be constant, but in some cases our
-    // AutoSimplify (algebraic simplification function) can't simplify
+    // Simplify (algebraic simplification function) can't simplify
     // completely where we use the whole shape in this indice as the accessed
     // range conservatively
     if (!range.min.is_constant() || !range.extent.is_constant()) {
@@ -1113,7 +1112,7 @@ std::vector<Expr> GetProducers(const Expr& block, const Expr& root) {
         }
         const ir::Store* store = x->As<ir::Store>();
         if (store) {
-          std::set<ir::Expr> call_nodes =
+          std::vector<ir::Expr> call_nodes =
               ir::ir_utils::CollectIRNodesWithoutTensor(
                   store->value,
                   [](const ir::Expr* x) { return x->As<ir::Call>(); });
@@ -1305,7 +1304,7 @@ std::vector<IterRange> CalculateRequiredRegions(
       loop.As<ir::For>(),
       ::common::errors::NotFound("Param loop should be a ir::For node."));
 
-  std::set<Expr> provided_nodes;
+  std::vector<Expr> provided_nodes;
   if (is_store_provided) {
     provided_nodes = ir::ir_utils::CollectIRNodesWithoutTensor(
         block, [&](const Expr* x) { return x->As<ir::Store>(); });
@@ -1355,7 +1354,7 @@ std::vector<IterRange> CalculateRequiredRegions(
                                  for_loop.As<ir::For>()->extent);
       }
 
-      std::set<Expr> required_nodes;
+      std::vector<Expr> required_nodes;
       if (is_store_provided) {
         required_nodes = ir::ir_utils::CollectIRNodesWithoutTensor(
             block_body, [&](const Expr* x) {

@@ -107,19 +107,6 @@
     func : c_embedding_grad
   no_need_buffer : weight
 
-- backward_op : c_softmax_with_cross_entropy_grad
-  forward: c_softmax_with_cross_entropy (Tensor logits, Tensor label,  int64_t ignore_index=-100, int ring_id=0, int rank=0, int nranks=0) -> Tensor(softmax), Tensor(loss)
-  args: (Tensor softmax, Tensor label, Tensor loss_grad,int64_t ignore_index=-100, int ring_id=0, int rank=0, int nranks=0)
-  output: Tensor(logits_grad)
-  infer_meta :
-    func: CSoftmaxWithCrossEntropyGradInferMeta
-    spmd_rule : CSoftmaxWithCrossEntropyGradSpmd
-    param: [softmax, label, loss_grad, ignore_index, rank, nranks]
-  kernel:
-    func: c_softmax_with_cross_entropy_grad
-    data_type: loss_grad
-    param: [softmax, label, loss_grad, ignore_index, rank, nranks]
-
 - backward_op : c_softmax_with_multi_label_cross_entropy_grad
   forward: c_softmax_with_multi_label_cross_entropy (Tensor logits, Tensor label, Tensor smooth_weight, int64_t ignore_index=-100, bool sum_multi_label_loss=true, int ring_id=0, int rank=0, int nranks=0) -> Tensor(softmax), Tensor(loss)
   args: (Tensor softmax, Tensor label, Tensor smooth_weight, Tensor loss_grad, int64_t ignore_index=-100, bool sum_multi_label_loss=true, int ring_id=0, int rank=0, int nranks=0)
@@ -475,6 +462,12 @@
            nce_sr_grad {dense, dense, dense, dense, dense, dense, dense, dense, dense, dense, dense -> dense, dense, selected_rows}
     data_type: input
   optional: bias, sample_weight, custom_dist_probs, custom_dist_alias, custom_dist_alias_probs
+
+- backward_op : print_grad
+  forward : print (Tensor in, int first_n, str message, int summarize, bool print_tensor_name = true, bool print_tensor_type = true, bool print_tensor_shape = true, bool print_tensor_layout = true, bool print_tensor_lod = true, str print_phase = "BOTH", bool is_forward = true) -> Tensor(out)
+  args : (Tensor out_grad, int first_n, str message, int summarize, bool print_tensor_name = true, bool print_tensor_type = true, bool print_tensor_shape = true, bool print_tensor_layout = true, bool print_tensor_lod = true, str print_phase = "BOTH", bool is_forward = true)
+  output : Tensor(in_grad)
+  invoke : print(out_grad, first_n, message, summarize, print_tensor_name, print_tensor_type, print_tensor_shape, print_tensor_layout, print_tensor_lod, print_phase, is_forward)
 
 - backward_op : push_box_sparse
   forward : pull_box_sparse (Tensor w, Tensor[] ids, bool is_sparse = false, bool is_distributed = false, int size = 1) -> Tensor[](out){ids.size()}

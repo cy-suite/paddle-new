@@ -28,12 +28,10 @@
 #include "paddle/pir/include/pass/pass_manager.h"
 #include "paddle/pir/include/pass/pass_registry.h"
 
-COMMON_DECLARE_bool(pir_apply_shape_optimization_pass);
-
 constexpr int vlog_level = 3;
 
-// TODO(zhangbopd): Some op results infered by InferSymbolicShape is NOT consist
-// with the result infered by InferMeta and should be fixed.
+// TODO(zhangbopd): Some op results inferred by InferSymbolicShape is NOT
+// consist with the result inferred by InferMeta and should be fixed.
 namespace {
 bool NeedCheckInferSymbolicWithInferMeta(const std::string& op_name,
                                          size_t result_idx) {
@@ -166,6 +164,13 @@ void CheckInferSymWithInferMeta(
       const std::vector<symbol::DimExpr>& infer_sym_shape =
           infer_context->GetShapeOrDataForValue(res).shape();
 
+      if (res.type().dyn_cast<pir::DenseTensorType>().dims().size() == -1) {
+        LOG(WARNING) << "Warning: For" << op->name() << " [id:" << op->id()
+                     << "] 's result(" << i << ")."
+                     << " Rank of infer_meta_shape is dynamic. "
+                     << "Received infer_sym_shape is " << infer_sym_shape;
+        continue;
+      }
       // Check rank.
       if (infer_meta_shape.size() != infer_sym_shape.size()) {
         std::ostringstream print_stream;
@@ -190,7 +195,7 @@ void CheckInferSymWithInferMeta(
                 << " [id:" << op->id() << "] "
                 << " carefully! "
                 << "shape[" << i
-                << "] of infer_sym_shape shoule be int64_t NOT a symbol!";
+                << "] of infer_sym_shape should be int64_t NOT a symbol!";
             LOG(ERROR) << print_stream.str();
             continue;
           }
@@ -246,6 +251,14 @@ class ShapeOptimizationPass : public pir::Pass {
 
 }  // namespace
 
+const bool IsGradOp(Operation* op) {
+  std::string suffix = "_grad";
+  const auto& op_name = op->name();
+  if (op_name.size() < suffix.size()) return false;
+  return op_name.compare(
+             op_name.size() - suffix.size(), suffix.size(), suffix) == 0;
+}
+
 void InferSymExprForOp(Operation* op,
                        InferSymbolicShapeContext* infer_context,
                        const InferSymbolicShapeCacheKey& op_infer_cache_key) {
@@ -265,16 +278,20 @@ void InferSymExprForOp(Operation* op,
           op, infer_context->GetShapeOrDataForValue(op->result(0)));
     }
   } else {
-    bool is_grad_op = [&]() {
-      std::string suffix = "_grad";
+    const bool is_special_cached_op = [&]() {
       const auto& op_name = op->name();
-      if (op_name.size() < suffix.size()) return false;
-      return op_name.compare(
-                 op_name.size() - suffix.size(), suffix.size(), suffix) == 0;
+      std::vector<std::string> special_cached_ops = {
+          "cf.tuple_pop",
+      };
+      return (std::find(special_cached_ops.begin(),
+                        special_cached_ops.end(),
+                        op_name) != special_cached_ops.end());
     }();
-    if (!is_grad_op)
+
+    if (!IsGradOp(op))
       LOG(WARNING) << op->name()
                    << " DOES NOT have InferSymbolicShapeInterface!";
+
     const bool all_outs_static_dims = [&] {
       bool all_static_dims = true;
       for (uint32_t i = 0; i < op->num_results(); ++i) {
@@ -288,7 +305,7 @@ void InferSymExprForOp(Operation* op,
       return all_static_dims;
     }();
 
-    if (all_outs_static_dims) {
+    if (all_outs_static_dims && !is_special_cached_op) {
       for (uint32_t i = 0; i < op->num_results(); ++i) {
         infer_context->SetSymbolForValueByStaticShape(op->result(i));
       }
@@ -315,6 +332,9 @@ void InferSymExprForOp(Operation* op,
                      << "[id:" << op->id()
                      << "], op_infer_cache_key is :" << op_infer_cache_key;
         for (uint32_t i = 0; i < op->num_results(); ++i) {
+          if (!op->result(i) || !op->result(i).type()) {
+            continue;
+          }
           infer_context->SetSymbolForValueByStaticShape(op->result(i));
         }
       }
@@ -335,6 +355,9 @@ void CacheForwardOpSymbolicShape(
         } else {
           for (uint32_t i = 0; i < cache_result.size(); ++i) {
             if (infer_result[i] != cache_result[i]) {
+              if (IsGradOp(op) && (!op->result(i) || !op->result(i).type())) {
+                continue;
+              }
               LOG(WARNING) << "cached shape is not consistent with real shape";
               VLOG(3) << "InferSymbolicShapeCacheKey is: "
                       << op_infer_cache_key;
@@ -455,9 +478,7 @@ void AddShapeOptimizationPass(
     pir::Program& program) {                          // NOLINT
   pir::IrContext* ctx = pir::IrContext::Instance();
   ctx->GetOrRegisterDialect<pir::shape::ShapeDialect>();
-  if (FLAGS_pir_apply_shape_optimization_pass) {
-    pass_manager->AddPass(pir::CreateShapeOptimizationPass());
-  }
+  pass_manager->AddPass(pir::CreateShapeOptimizationPass());
 }
 
 }  // namespace pir::shape

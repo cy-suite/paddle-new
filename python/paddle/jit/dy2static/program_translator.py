@@ -136,7 +136,7 @@ def check_view_api_used_by_inplace(program: paddle.pir.Program) -> None:
     skipped_inplace_ops = [
         "pd_op.set_value_",
         "pd_op.set_value_with_tensor_",
-        # It willn't change tensor imdeiately,but it's ouput is dangerous.
+        # It willn't change tensor imdeiately,but it's output is dangerous.
         "pd_op.share_data_",
     ]
 
@@ -152,17 +152,17 @@ def check_view_api_used_by_inplace(program: paddle.pir.Program) -> None:
 
     all_vars_list = program.list_vars()
     for value in all_vars_list:
-        uesd_by_stride_ops = []
+        used_by_stride_ops = []
         for op in reversed(value.all_used_ops()):
             inplace_info = paddle.core.pir.get_op_inplace_info(op)
             if val_is_used_by_stride_op(op, value):
-                uesd_by_stride_ops.append(op)
+                used_by_stride_ops.append(op)
             if is_used_by_inplace_op(op, value, inplace_info):
                 if op.name() in skipped_inplace_ops:
                     continue
                 if value.get_defining_op().name() in framework.stride_ops:
                     show_op_callstack(op)
-                if len(uesd_by_stride_ops) == 0:
+                if len(used_by_stride_ops) == 0:
                     continue
                 show_op_callstack(op)
 
@@ -495,6 +495,7 @@ class StaticFunction(Generic[_InputT, _RetT]):
             new_static_layer = self._clone()
             if (
                 isinstance(instance, layers.Layer)
+                and hasattr(instance, "_original_funcs")
                 and self._dygraph_function.__name__
                 not in instance._original_funcs.keys()
             ):
@@ -690,11 +691,7 @@ class StaticFunction(Generic[_InputT, _RetT]):
 
     def __deepcopy__(self, memo):
         """
-        Customized behavior for copy.deepcopy, return original decorated function instead
-        of a new StaticFunction Object. StaticFunction itself is not copyable because it's
-        associated with class_instance.
-
-        We add __deepcopy__ here only for the following usage:
+        Customized behavior for copy.deepcopy, return a new StaticFunction instance.
 
         Example::
             .. code-block:: python
@@ -716,19 +713,20 @@ class StaticFunction(Generic[_InputT, _RetT]):
                 >>> x = paddle.randn([10, 1], 'float32')
                 >>> net = paddle.jit.to_static(Net())  # convert into static graph mode
 
-                >>> copy_net = copy.deepcopy(net)      # deepcopy a new net without @to_static
-
-        Please attention that original 'net' will unwrap @to_static and rollback into simple Layer.
+                >>> copy_net = copy.deepcopy(net)      # still in static graph mode
         """
         if self.class_instance is not None:
-            net_name = type(self.class_instance).__name__
-            logging_utils.log(
-                level=-1,
-                msg=f"Not recommend to deepcopy '{net_name}' decorated with @to_static, it has side effect that will"
-                f" rollback into original state before @to_static. Please deepcopy '{net_name}' before applying @to_static.",
+            copied_static_fn = type(self)(
+                self._dygraph_function, self._input_spec, **self._kwargs
             )
-            self.rollback()
-            return self._dygraph_function.__get__(memo[id(self.class_instance)])
+            copied_static_fn._training = self._training
+            copied_static_fn._cuda_graph_pool_id = self._cuda_graph_pool_id
+            copied_static_fn._program_cache = self._program_cache
+            copied_static_fn._descriptor_cache = self._descriptor_cache
+            copied_static_fn._patched_name = self._patched_name
+            return copied_static_fn.__get__(
+                memo[id(self.class_instance)], type(self.class_instance)
+            )
         else:
             return self._dygraph_function
 
@@ -1059,7 +1057,7 @@ class ASTStaticFunction(StaticFunction[_InputT, _RetT]):
                 )
                 if cached_program_len > 1:
                     logging_utils.warn(
-                        f"Current {self._function_spec} has more than one cached programs: {cached_program_len}, the last traced progam will be return by default."
+                        f"Current {self._function_spec} has more than one cached programs: {cached_program_len}, the last traced program will be return by default."
                     )
 
                 cache_key = self._program_cache._recent_cache_key
@@ -1266,16 +1264,22 @@ class ConcreteProgram:
                 is_to_static=True
             ), static_op_arg_cast_guard(_convert_into_value):
                 # 1. Adds `paddle.static.data` layers for input if needed
-                static_inputs = func_spec.pir_to_static_inputs_with_spec(
-                    input_spec, main_program
+                static_inputs, program_inputs = (
+                    func_spec.pir_to_static_inputs_with_spec(
+                        input_spec, main_program
+                    )
                 )
-                _kwargs = func_spec.pir_to_static_inputs_with_spec(
+                _kwargs, _ = func_spec.pir_to_static_inputs_with_spec(
                     input_kwargs_spec, main_program
                 )
                 if class_instance:
                     static_inputs = (
                         class_instance,
                         *list(static_inputs),
+                    )
+                    program_inputs = (
+                        class_instance,
+                        *list(program_inputs),
                     )
 
                 # 2. Builds program only once and returns the output Variables.
@@ -1319,7 +1323,7 @@ class ConcreteProgram:
             check_view_api_used_by_inplace(main_program)
 
         return ConcreteProgram(
-            inputs=static_inputs,
+            inputs=program_inputs,
             outputs=outputs,
             parameters=all_parameters_and_buffers,
             function=dygraph_function,
@@ -1883,7 +1887,7 @@ def _to_prim(
     start_idx=-1,
     backward_length=-1,
 ):
-    """Swith to static graph and call to_prim."""
+    """Switch to static graph and call to_prim."""
     # TODO(Aurelius84): Fix this cycle import problem
     from paddle.incubate.autograd import primapi
 

@@ -60,7 +60,6 @@ void RToXExpandReshardFunction::Eval(phi::DeviceContext* dev_ctx,
   int64_t cur_global_rank = GetCurGlobalRank();
   int64_t root_rank = in_process_ids[0];
   auto all_process_ids = GetUnionProcessIds(in_process_ids, out_process_ids);
-  bool dynamic_shape = true;
   auto dtype = in.dtype();
   const auto& out_partial_status = out_dist_attr.partial_status();
   bool cur_rank_in_out_mesh =
@@ -78,7 +77,7 @@ void RToXExpandReshardFunction::Eval(phi::DeviceContext* dev_ctx,
                                   all_process_ids,
                                   in.value(),
                                   out_process_id,
-                                  dynamic_shape);
+                                  /*dynamic_shape=*/true);
       }
     }
     if (cur_rank_in_out_mesh) {
@@ -91,7 +90,7 @@ void RToXExpandReshardFunction::Eval(phi::DeviceContext* dev_ctx,
                               all_process_ids,
                               root_rank,
                               {} /*out_shape*/,
-                              dynamic_shape,
+                              /*dynamic_shape=*/true,
                               &result_value);
   }
 

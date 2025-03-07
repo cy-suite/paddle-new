@@ -51,6 +51,7 @@ from paddle.autograd.backward_utils import (
     warning_once,
     while_prune_check,
 )
+from paddle.base.framework import pir_op_name_guard
 from paddle.base.libpaddle.pir import (
     build_pipe_for_block,
     get_used_external_value,
@@ -908,7 +909,9 @@ def append_backward_ops(
                         # create grad_op
 
                         before_ops_num = len(bwd_block.ops)
-                        with dynamic_shape_prim_vjp_guard(op, inputs):
+                        with dynamic_shape_prim_vjp_guard(
+                            op, inputs
+                        ), pir_op_name_guard(op.name() + '_grad'):
                             input_grads = paddle.framework.core.call_vjp(
                                 op,
                                 inputs,
@@ -1047,7 +1050,9 @@ def _complete_grad_op_chunk_id(block, state):
 
     # TODO(Ruibiao): Reorganize these unclear codes about chunk_id
     def get_op_chunk_id(op):
-        if op.dist_attr is None:
+        if op.has_attr("chunk_id"):
+            op_chunk_id = op.chunk_id
+        elif op.dist_attr is None:
             op_chunk_id = -1
             if op.name() in dist_skip_op_list:
                 op_chunk_id = infer_dist_skip_op_chunk_id(op)
@@ -1077,7 +1082,10 @@ def _complete_grad_op_chunk_id(block, state):
         fwd_op_chunk_id = get_op_chunk_id(op)
 
         for bwd_op in state.op_to_opgrad[op]:
-            if bwd_op.dist_attr is None:
+            if op.has_attr("chunk_id"):
+                bwd_op.set_int_attr("chunk_id", op.chunk_id)
+                continue
+            elif bwd_op.dist_attr is None:
                 continue
 
             if bwd_op.name() in ["pd_op.add_", "pd_op.add_n_"]:
