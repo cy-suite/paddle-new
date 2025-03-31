@@ -75,27 +75,22 @@ TEST(CrossBlockReductionReplacer, SRLayout) {
         }
         thread_bind[blockIdx.y] for (reduce_k, 0, 8)
         {
-          is_last_block_done[0] = cinn_grid_reduce_update_semaphore(Tensor(semaphore, [16]))
-          if (is_last_block_done[0]) {
-            ScheduleBlock(B)
+          ScheduleBlock(B)
+          {
+            i0_0, i1 = axis.bind(i, reduce_k)
             {
-              i0_0, i1 = axis.bind(i, reduce_k)
-              {
-                B[i0_0] = cinn_grid_reduce_sum_fp32(Tensor(A, [8,16]), 16, i0_0)
-              }
+              B[i0_0] = cinn_grid_reduce_sum_fp32(Tensor(A, [8,16]), 16, i0_0)
             }
           }
         }
       }
       thread_bind[blockIdx.x] for (i, 0, 16)
       {
-        if (is_last_block_done[0]) {
-          ScheduleBlock(C)
+        ScheduleBlock(C)
+        {
+          i0_1 = axis.bind(i)
           {
-            i0_1 = axis.bind(i)
-            {
-              C[i0_1] = sqrt(B[i0_1])
-            }
+            C[i0_1] = sqrt(B[i0_1])
           }
         }
       }
@@ -169,14 +164,11 @@ TEST(CrossBlockReductionReplacer, RSLayout) {
           }
           thread_bind[blockIdx.y] for (reduce_k, 0, 8)
           {
-            is_last_block_done[0] = cinn_grid_reduce_update_semaphore(Tensor(semaphore, [4]))
-            if (is_last_block_done[0]) {
-              ScheduleBlock(B)
+            ScheduleBlock(B)
+            {
+              i0_0, i1_0, i2 = axis.bind(i, j, reduce_k)
               {
-                i0_0, i1_0, i2 = axis.bind(i, j, reduce_k)
-                {
-                  B[i0_0, i1_0] = cinn_grid_reduce_max_fp32(Tensor(A, [8,4,32]), 128, ((i0_0 * 32) + i1_0))
-                }
+                B[i0_0, i1_0] = cinn_grid_reduce_max_fp32(Tensor(A, [8,4,32]), 128, ((i0_0 * 32) + i1_0))
               }
             }
           }
@@ -186,13 +178,11 @@ TEST(CrossBlockReductionReplacer, RSLayout) {
       {
         thread_bind[threadIdx.x] for (j, 0, 32)
         {
-          if (is_last_block_done[0]) {
-            ScheduleBlock(C)
+          ScheduleBlock(C)
+          {
+            i0_1, i1_1 = axis.bind(i, j)
             {
-              i0_1, i1_1 = axis.bind(i, j)
-              {
-                C[i0_1, i1_1] = exp(B[i0_1, i1_1])
-              }
+              C[i0_1, i1_1] = exp(B[i0_1, i1_1])
             }
           }
         }
