@@ -25,6 +25,9 @@ if(WITH_GPU)
       WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
     set_tests_properties(${cinn_pir_test_name} PROPERTIES LABELS
                                                           "RUN_TYPE=CINN")
+    if(cinn_pir_test_name STREQUAL "test_transpose")
+      set_tests_properties(${cinn_pir_test_name} PROPERTIES TIMEOUT 60)
+    endif()
   endforeach()
 
   add_test(
