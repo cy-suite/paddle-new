@@ -52,4 +52,5 @@ PD_REGISTER_KERNEL(multiply,
                    phi::dtype::bfloat16,
                    float,
                    int,
-                   int64_t) {}
+                   int64_t,
+                   bool) {}
