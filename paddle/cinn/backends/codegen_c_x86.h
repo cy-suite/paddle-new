@@ -62,9 +62,9 @@ class CodeGenCX86 : public CodeGenC {
   void Visit(const ir::And *op) override { CodeGenC::Visit(op); }
   void Visit(const ir::Or *op) override { CodeGenC::Visit(op); }
   void Visit(const ir::Load *op) override;
-  void Visit(const ir::Store *op) override;
   void Visit(const ir::Broadcast *op) override;
   void Visit(const ir::intrinsics::BuiltinIntrin *op);
+  void VisitStmt(const ir::stmt::Store &op) override;
 
   //! Check the features.
   // @{
@@ -92,6 +92,27 @@ class CodeGenCX86 : public CodeGenC {
   template <typename Op>
   void PrintAbsAddr(const Op *op) {
     str_ += op->tensor.template As<ir::_Tensor_>()->name;
+    str_ += " + ";
+
+    auto index = op->index();
+    auto *ramp_n = index.template As<ir::Ramp>();
+    if (ramp_n) {
+      PADDLE_ENFORCE_EQ(
+          !ramp_n->base.template As<ir::Ramp>(),
+          true,
+          ::common::errors::InvalidArgument(
+              "The base of a Ramp node should not be of Ramp type. "
+              "Please ensure that the base is correctly set to a non-Ramp "
+              "type."));
+      IrPrinter::Visit(ramp_n->base);
+    } else {
+      IrPrinter::Visit(op->index());
+    }
+  }
+
+  template <typename Op>
+  void PrintStmtAbsAddr(const Op &op) {
+    str_ += op->tensor().template As<ir::_Tensor_>()->name;
     str_ += " + ";
 
     auto index = op->index();

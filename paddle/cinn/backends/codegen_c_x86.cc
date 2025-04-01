@@ -79,27 +79,27 @@ void CodeGenCX86::Visit(const ir::Broadcast *op) {
   }
 }
 
-void CodeGenCX86::Visit(const ir::Store *op) {
+void CodeGenCX86::VisitStmt(const ir::stmt::Store &op) {
   if (op->type().lanes() == 1) {
-    CodeGenC::Visit(op);
+    CodeGenC::VisitStmt(op);
     return;
   }
 
   int bits = op->type().bits() * op->type().lanes();
   if (SupportsAVX512() && bits == 512) {
     str_ += "cinn_avx512_store(";
-    PrintAbsAddr(op);
+    PrintStmtAbsAddr(op);
     str_ += ", ";
-    IrPrinter::Visit(op->value);
+    IrPrinter::Visit(op->value());
     str_ += ")";
   } else if (SupportsAVX256() && bits == 256) {
     str_ += "cinn_avx256_store(";
-    PrintAbsAddr(op);
+    PrintStmtAbsAddr(op);
     str_ += ", ";
-    IrPrinter::Visit(op->value);
+    IrPrinter::Visit(op->value());
     str_ += ")";
   } else {
-    CodeGenC::Visit(op);
+    CodeGenC::VisitStmt(op);
   }
 }
 
