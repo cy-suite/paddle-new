@@ -587,12 +587,12 @@ TileConfigMap BuildPureStaticShapeConfig(
   if (last_dim == "R") {
     rd_thread_num = 32;
     int64_t remain_reduce_numel = CeilDiv(reduce_numel, 32);
-    if ((remain_reduce_numel <= 8 && spatial_numel > 1) ||
-        (spatial_numel > remain_reduce_numel * 128)) {
+    if (remain_reduce_numel <= 8 && spatial_numel > 1) {
       sp_thread_num = Trim(spatial_numel, 1, 8);
       reduce_method = WarpReduceMethod();
     } else {
-      rd_thread_num *= Trim(remain_reduce_numel, 1, 32);
+      int64_t desired_warp_num = CeilDiv(remain_reduce_numel, 8);
+      rd_thread_num *= Trim(CeilPow2(desired_warp_num), 4, 32);
       reduce_method = BlockReduceMethod();
     }
   } else {  // last_dim == "S"
