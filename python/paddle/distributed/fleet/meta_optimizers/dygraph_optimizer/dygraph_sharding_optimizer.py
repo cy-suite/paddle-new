@@ -884,9 +884,27 @@ class DygraphShardingOptimizerV2:
             for k, v in comm_buffer._sharding_param_grad_view.items():
                 pad_tensor = v._get_padding()
                 if pad_tensor is not None:
-                    assert paddle.all(
-                        pad_tensor == 0
-                    ).item(), f"{SHARDING_PAD_NON_ZERO_ERROR}. The padding of Tensor {k} is not zero"
+                    check = paddle.all(pad_tensor == 0).item()
+                    if not check:
+                        import numpy as np
+
+                        np.set_printoptions(threshold=np.inf)
+                        v_tensor = v._grad_buffer._slice(
+                            v._param_begin, v._param_end
+                        )
+                        print(
+                            "sharding_pad_non_zero_error tensor_value:",
+                            v_tensor.shape,
+                            v_tensor.numpy(),
+                        )
+                        print(
+                            "sharding_pad_non_zero_error _pad_value:",
+                            pad_tensor.shape,
+                            pad_tensor.numpy(),
+                        )
+                        assert (
+                            check
+                        ), f"{SHARDING_PAD_NON_ZERO_ERROR}. The padding of Tensor {k} is not zero"
         if self._enable_timer:
             self.timers("check-padding-zero").stop()
 
