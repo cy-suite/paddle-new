@@ -125,6 +125,10 @@ struct SimpleOpTypeSetTeller : public Teller {
                   bool forbid_dynamic_op_enter_into_trt = false,
                   bool use_explicit_quantization = false) override {
     const std::string op_type = desc.Type();
+    std::cout<<"SimpleOpTypeSetTellerzss:"<<op_type<<std::endl;
+    // if (op_type == "fused_conv2d_add_act") {
+    //   return false;
+    // }
 
     std::unordered_set<std::string> control_set = {"conditional_block",
                                                    "while"};
@@ -3426,6 +3430,7 @@ struct GenericPluginTeller : public Teller {
                   bool forbid_dynamic_op_enter_into_trt = false,
                   bool use_explicit_quantization = false) override {
     const std::string op_type = desc.Type();
+    std::cout<<"GenericPluginTellerzss:"<<op_type<<std::endl;
 
     // only consider dynamic_shape mode
     if (!with_dynamic_shape) {
@@ -3501,6 +3506,7 @@ struct CustomPluginTeller : public Teller {
                   bool forbid_dynamic_op_enter_into_trt = false,
                   bool use_explicit_quantization = false) override {
     const std::string op_type = desc.Type();
+    std::cout<<"CustomPluginTellerzss:"<<op_type<<std::endl;
     std::string expect_plugin_name;
 
     if (with_dynamic_shape) {
@@ -3531,6 +3537,7 @@ struct CustomGenericPluginTeller : public Teller {
                   bool forbid_dynamic_op_enter_into_trt = false,
                   bool use_explicit_quantization = false) override {
     const std::string op_type = desc.Type();
+    std::cout<<"CustomGenericPluginTellerzss:"<<op_type<<std::endl;
 
     auto& op_meta_info_map = OpMetaInfoMap::Instance();
     const auto& meta_info_map = op_meta_info_map.GetMap();
