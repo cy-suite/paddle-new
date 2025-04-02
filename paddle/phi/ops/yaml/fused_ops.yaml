@@ -4,6 +4,15 @@
 # if one operator have "support_dygraph_mode : true", it supports dygraph mode,
 # otherwise the operator only could be used in static mode.
 
+- op : adaptive_layernorm_xpu
+  args : (Tensor x, Tensor scale, Tensor bias, Tensor tensor1, Tensor tensor2, int begin_norm_axis = 2, float epsilon = 1e-5, float factor = 1.0f, float scale_bias = 1.0f, bool bias_after_scale = true )
+  output : Tensor(out)
+  infer_meta :
+    func : AdaptiveLayernormXPUInferMeta
+  kernel :
+    func : adaptive_layernorm_xpu
+    data_type : x
+
 - op : add_act_xpu
   args : (Tensor x, Tensor x_max, Tensor y, Tensor y_max, int act_type)
   output : Tensor(out), Tensor(out_max)
