@@ -91,6 +91,7 @@ class TEST_API BlockDesc {
   OpDesc *PrependOp();
 
   void PrependAllocatedOp(std::unique_ptr<OpDesc> &&op_desc);
+  void PrependAllocatedOp_copy(std::unique_ptr<OpDesc> &&op_desc);
 
   OpDesc *InsertOp(size_t index);
 
