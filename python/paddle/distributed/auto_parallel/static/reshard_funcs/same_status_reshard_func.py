@@ -128,7 +128,7 @@ class SameStatusReshardFunction(ReshardFunction):
                 ), "dynamic shape is not supported by pir-auto parallel yet."
 
                 comm_group = new_process_group([src, dst], group_type="p2p")
-                recv_value = paddle._C_ops.recv_v2(
+                recv_value = paddle._C_ops.p_recv(
                     dst_type._local_shape,
                     dst_type.dtype,
                     comm_group.ranks.index(src),
