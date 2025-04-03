@@ -730,7 +730,7 @@ class WeightOnlyLinearTestCaseStatic(WeightOnlyLinearTestCase):
     not core.is_compiled_with_cuda() or get_cuda_version() < 11020,
     "quantized_matmul requires CUDA >= 11.2 and CUDA_ARCH >= 8",
 )
-class WeightOnlyQuantizeCPUGPUTestCase(unittest.TestCase):
+class WeightOnlyQuantizeCPUGPUTestCase1(unittest.TestCase):
     def config(self):
         self.dtype = 'float16'
         self.batch = 1
@@ -738,18 +738,19 @@ class WeightOnlyQuantizeCPUGPUTestCase(unittest.TestCase):
         self.in_features = 64
         self.out_features = 256
         self.group_size = -1
+        self.algo = "weight_only_int4"
 
     def weightQuantizeCPUGPUConsistenceCheck(self, weight_float):
         for arch in [70, 75, 80, 86]:
             weight_gpu, weight_scale_gpu = Q.weight_quantize(
                 weight_float.cuda(),
-                algo="weight_only_int4",
+                algo=self.algo,
                 arch=arch,
                 group_size=self.group_size,
             )
             weight_cpu, weight_scale_cpu = Q.weight_quantize(
                 weight_float.cpu(),
-                algo="weight_only_int4",
+                algo=self.algo,
                 arch=arch,
                 group_size=self.group_size,
             )
@@ -785,6 +786,94 @@ class WeightOnlyQuantizeCPUGPUTestCase(unittest.TestCase):
         self.bias = self.linear.bias
         self.float_weight = self.linear.weight
         self.weightQuantizeCPUGPUConsistenceCheck(self.float_weight)
+
+
+@unittest.skipIf(
+    not core.is_compiled_with_cuda() or get_cuda_version() < 11020,
+    "quantized_matmul requires CUDA >= 11.2 and CUDA_ARCH >= 8",
+)
+class WeightOnlyQuantizeCPUGPUTestCase2(WeightOnlyQuantizeCPUGPUTestCase1):
+    def config(self):
+        super().config()
+        self.group_size = 64
+
+
+@unittest.skipIf(
+    not core.is_compiled_with_cuda() or get_cuda_version() < 11020,
+    "quantized_matmul requires CUDA >= 11.2 and CUDA_ARCH >= 8",
+)
+class WeightOnlyQuantizeCPUGPUTestCase3(WeightOnlyQuantizeCPUGPUTestCase1):
+    def config(self):
+        super().config()
+        self.group_size = 128
+
+
+@unittest.skipIf(
+    not core.is_compiled_with_cuda() or get_cuda_version() < 11020,
+    "quantized_matmul requires CUDA >= 11.2 and CUDA_ARCH >= 8",
+)
+class WeightOnlyQuantizeCPUGPUTestCase4(WeightOnlyQuantizeCPUGPUTestCase1):
+    def config(self):
+        super().config()
+        self.group_size = 64
+        self.dtype = 'bfloat16'
+
+
+@unittest.skipIf(
+    not core.is_compiled_with_cuda() or get_cuda_version() < 11020,
+    "quantized_matmul requires CUDA >= 11.2 and CUDA_ARCH >= 8",
+)
+class WeightOnlyQuantizeCPUGPUTestCase5(WeightOnlyQuantizeCPUGPUTestCase1):
+    def config(self):
+        super().config()
+        self.group_size = 128
+        self.dtype = 'bfloat16'
+
+
+@unittest.skipIf(
+    not core.is_compiled_with_cuda() or get_cuda_version() < 11020,
+    "quantized_matmul requires CUDA >= 11.2 and CUDA_ARCH >= 8",
+)
+class WeightOnlyQuantizeCPUGPUTestCase6(WeightOnlyQuantizeCPUGPUTestCase1):
+    def config(self):
+        super().config()
+        self.group_size = 64
+        self.algo = "weight_only_int8"
+
+
+@unittest.skipIf(
+    not core.is_compiled_with_cuda() or get_cuda_version() < 11020,
+    "quantized_matmul requires CUDA >= 11.2 and CUDA_ARCH >= 8",
+)
+class WeightOnlyQuantizeCPUGPUTestCase7(WeightOnlyQuantizeCPUGPUTestCase1):
+    def config(self):
+        super().config()
+        self.group_size = 128
+        self.algo = "weight_only_int8"
+
+
+@unittest.skipIf(
+    not core.is_compiled_with_cuda() or get_cuda_version() < 11020,
+    "quantized_matmul requires CUDA >= 11.2 and CUDA_ARCH >= 8",
+)
+class WeightOnlyQuantizeCPUGPUTestCase8(WeightOnlyQuantizeCPUGPUTestCase1):
+    def config(self):
+        super().config()
+        self.group_size = 64
+        self.dtype = 'bfloat16'
+        self.algo = "weight_only_int8"
+
+
+@unittest.skipIf(
+    not core.is_compiled_with_cuda() or get_cuda_version() < 11020,
+    "quantized_matmul requires CUDA >= 11.2 and CUDA_ARCH >= 8",
+)
+class WeightOnlyQuantizeCPUGPUTestCase9(WeightOnlyQuantizeCPUGPUTestCase1):
+    def config(self):
+        super().config()
+        self.group_size = 128
+        self.dtype = 'bfloat16'
+        self.algo = "weight_only_int8"
 
 
 @unittest.skipIf(

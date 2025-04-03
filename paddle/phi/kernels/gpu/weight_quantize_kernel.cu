@@ -62,7 +62,8 @@ void WeightQuantizeKernel(const Context& dev_ctx,
                                  scale->data<float>(),
                                  weight_shape,
                                  arch,
-                                 algo);
+                                 algo,
+                                 group_size);
     trans(dev_ctx, quanted_x, out, axis);
   } else if (algo == "weight_only_int8") {
     dev_ctx.template Alloc<T>(scale);
@@ -72,7 +73,8 @@ void WeightQuantizeKernel(const Context& dev_ctx,
                                  scale->data<T>(),
                                  weight_shape,
                                  arch,
-                                 algo);
+                                 algo,
+                                 group_size);
 #ifdef PADDLE_WITH_HIP
     std::vector<int> axis = {1, 0};
     funcs::Transpose<Context, int8_t, 2> trans;
@@ -93,7 +95,8 @@ void WeightQuantizeKernel(const Context& dev_ctx,
                                  scale->data<T>(),
                                  weight_shape,
                                  arch,
-                                 algo);
+                                 algo,
+                                 group_size);
 #ifdef PADDLE_WITH_HIP
     DenseTensor x_int_tmp(out->type());
     x_int_tmp.Resize({static_cast<int64_t>(m), static_cast<int64_t>(n / 2)});
