@@ -115,6 +115,11 @@ class Variable {
         IsRegisteredVarType<T>(),
         "Not registered type. Please register T inside var_type_traits.h");
     PlaceholderImpl() { this->Init(&obj_, VarTypeTrait<T>::kId); }
+    // Add destructor to prevent use-after-free
+    ~PlaceholderImpl() override {
+      // Clear the pointer before obj_ is destroyed
+      this->ptr_ = nullptr;
+    }
 
    private:
     T obj_;

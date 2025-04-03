@@ -19,6 +19,7 @@
 #include "paddle/fluid/eager/autograd_meta.h"
 #include "paddle/fluid/eager/eager_tensor.h"
 #include "paddle/fluid/eager/to_static/run_program_op_node.h"
+#include "paddle/fluid/eager/to_static/scope_cache.h"
 #include "paddle/fluid/eager/utils.h"
 #include "paddle/fluid/framework/tensor_ref_array.h"
 #include "paddle/phi/core/memory/allocation/allocator.h"
@@ -287,8 +288,8 @@ inline void run_program_ad_func(
 inline void pir_run_program_ad_func(
     const std::vector<paddle::Tensor>& x,
     const std::vector<paddle::Tensor>& params,
-    std::vector<paddle::Tensor*>& out,                   // NOLINT
-    std::vector<paddle::framework::Scope*>& step_scope,  // NOLINT
+    std::vector<paddle::Tensor*>& out,                       // NOLINT
+    std::vector<paddle::framework::Scope*>& step_scope_vec,  // NOLINT
     const paddle::framework::AttributeMap& attrs) {
   // Prepare Autograd Meta
   VLOG(2) << "start run pir run_program ad function.";
@@ -323,6 +324,10 @@ inline void pir_run_program_ad_func(
     int64_t device_type = static_cast<int64_t>(tensor.place().GetType());
     place_hash_key = hash_with_seed(place_hash_key, device_type);
   }
+  int64_t program_id = PADDLE_GET_CONST(int64_t, attrs.at("program_id"));
+  int64_t cache_key = hash_with_seed(program_id, place_hash_key);
+  paddle::framework::Scope* step_scope =
+      egr::jit::ScopeCache::Instance().Get(cache_key);
   PirRunProgramAPI(x_tmp,
                    params_tmp,
                    out,
@@ -360,7 +365,7 @@ inline void pir_run_program_ad_func(
         PADDLE_GET_CONST(std::vector<::pir::Value>, attrs.at("bp_g"));
 
     pir_clear_unused_out_var_in_backward(
-        forward_outputs, backward_program->block(), step_scope[0]);
+        forward_outputs, backward_program->block(), step_scope);
 
     grad_node->SetFwdParams(params_tmp);
 
