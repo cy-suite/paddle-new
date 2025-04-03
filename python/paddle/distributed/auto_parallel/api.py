@@ -58,7 +58,7 @@ from paddle.distributed.auto_parallel.static.utils import (
     split_param_func,
     to_list,
 )
-from paddle.framework import core
+from paddle.framework import core, in_dynamic_mode
 from paddle.io.dataloader.batch_sampler import (
     DistributedBatchSampler,
     _InfiniteIterableSampler,
@@ -1387,6 +1387,58 @@ class _ShardOptimizer(Optimizer):
                 )
             param_and_grad = (param_and_grad[0], grad)
         return self._inner_opt._append_optimize_op(block, param_and_grad)
+
+    def _apply_optimize(
+        self, loss, startup_program, params_grads, param_group_idx=0
+    ):
+        def get_shard_dim(len, shard_dims):
+            for idx in range(len):
+                if idx not in shard_dims:
+                    return idx
+            return -1
+
+        def shard_grad(p_and_g):
+            new_p_and_g = []
+            for p, g in p_and_g:
+                process_mesh = g.process_mesh
+                placements = g.placements
+                new_g = g
+                need_shard = False
+                shard_dims = {}
+                maxlen = len(placements)
+                for idx in range(maxlen):
+                    placement = placements[idx]
+                    if placement.is_shard():
+                        dim = placement.get_dim()
+                        shard_dims[dim] = 1
+
+                for idx in range(maxlen - 1, -1, -1):
+                    placement = placements[idx]
+                    if placement.is_partial():
+                        need_shard = True
+                        dim = get_shard_dim(len(g._local_shape), shard_dims)
+                        if dim == -1:
+                            placements[idx] = dist.Replicate()
+                        else:
+                            shard_dims[dim] = 1
+                            placements[idx] = dist.Shard(dim)
+                if need_shard:
+                    new_g = dist.reshard(g, process_mesh, placements)
+
+                new_p_and_g.append((p, new_g))
+
+            return new_p_and_g
+
+        if in_dynamic_mode():
+            with paddle.static.program_guard(
+                paddle.static.default_main_program(),
+                paddle.static.default_startup_program(),
+            ):
+                params_grads = shard_grad(params_grads)
+
+        return super()._apply_optimize(
+            loss, startup_program, params_grads, param_group_idx=0
+        )
 
     def __getattr__(self, item):
         if "_inner_opt" in self.__dict__:
