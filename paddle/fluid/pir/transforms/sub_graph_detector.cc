@@ -174,6 +174,25 @@ std::vector<pir::Operation*> GetConsumerOps(
   return consumers;
 }
 
+std::set<pir::Value> GetInplaceInputValues(pir::Operation* op) {
+  if (!op->HasInterface<paddle::dialect::OpYamlInfoInterface>()) return {};
+  auto op_info =
+      op->dyn_cast<paddle::dialect::OpYamlInfoInterface>().GetOpInfo();
+  auto input_info_list = std::get<0>(op_info);
+  auto inplace_info_map = std::get<3>(op_info).inplace;
+  std::set<std::string> inplace_input_names;
+  for (const auto& [_unused, in] : inplace_info_map) {
+    inplace_input_names.insert(in);
+  }
+  std::set<pir::Value> inplace_inputs;
+  for (size_t i = 0; i < input_info_list.size(); ++i) {
+    if (inplace_input_names.count(input_info_list[i].name)) {
+      inplace_inputs.insert(op->operand_source(i));
+    }
+  }
+  return inplace_inputs;
+}
+
 bool IsSideEffectButNotInplaceOp(pir::Operation* op) {
   return op->HasTrait<pir::SideEffectTrait>() &&
          !op->HasTrait<paddle::dialect::InplaceTrait>();
@@ -402,6 +421,14 @@ class SubgraphDetector {
       if (subgraph->topo_index < last_index) return false;
       last_index = subgraph->topo_index;
     }
+    for (const auto& ops : inplace_ops_order_) {
+      last_index = INT_MIN;
+      for (const auto& op : ops) {
+        auto subgraph = GetOpSubgraph(op);
+        if (subgraph->topo_index < last_index) return false;
+        last_index = subgraph->topo_index;
+      }
+    }
     return true;
   }
 
@@ -428,6 +455,7 @@ class SubgraphDetector {
   std::unordered_map<pir::Operation*, int> op2index_;
   std::vector<pir::Operation*> sort_ops_;
   std::vector<pir::Operation*> side_effect_ops_;
+  std::vector<std::vector<pir::Operation*>> inplace_ops_order_;
   std::unordered_map<pir::Operation*, SubGraphPtr> op2subgraph_;
   std::unordered_set<int> subgraph_index_set_;
 };
@@ -557,12 +585,16 @@ void SubgraphDetector::FallbackSubGraphFusion(const SubGraphPtr& source,
 SubgraphDetector::SubgraphDetector(pir::Block* block,
                                    const OpClassifier& classifier) {
   // init sort_ops_ in reverse topo order and op2index_ in topo order
+  std::vector<pir::Operation*> inplace_ops;
   int index = 0;
   for (auto& op : *block) {
     sort_ops_.push_back(&op);
     op2index_[&op] = index++;
     if (IsSideEffectButNotInplaceOp(&op)) {
       side_effect_ops_.push_back(&op);
+    }
+    if (op.HasTrait<paddle::dialect::InplaceTrait>()) {
+      inplace_ops.push_back(&op);
     }
   }
   std::reverse(sort_ops_.begin(), sort_ops_.end());
@@ -589,6 +621,33 @@ SubgraphDetector::SubgraphDetector(pir::Block* block,
       op2subgraph_[consumer]->upstreams.insert(subgraph);
     }
   }
+
+  // init inplace_ops_order_
+  std::vector<std::set<pir::Value>> inplace_values_sets;
+  for (const auto& op : inplace_ops) {
+    auto values = GetInplaceInputValues(op);
+    inplace_values_sets.push_back(values);
+  }
+  std::set<pir::Value> shared_inplace_values;
+  for (const auto& first : inplace_values_sets) {
+    for (const auto& second : inplace_values_sets) {
+      std::set_union(
+          first.begin(),
+          first.end(),
+          second.begin(),
+          second.end(),
+          std::inserter(shared_inplace_values, shared_inplace_values.begin()));
+    }
+  }
+  for (const auto& shared_value : shared_inplace_values) {
+    inplace_ops_order_.emplace_back();
+    for (size_t i = 0; i < inplace_values_sets.size(); ++i) {
+      if (inplace_values_sets[i].count(shared_value)) {
+        inplace_ops_order_.back().push_back(inplace_ops[i]);
+      }
+    }
+  }
+
   VLOG(6) << "Subgraphs before building groups: ";
   for (const auto& subgraph : subgraph_list) {
     VLOG(6) << subgraph->DebugStr();
