@@ -33,11 +33,14 @@ class ApiMinimumTest(unittest.TestCase):
         self.input_a = np.array([0, np.nan, np.nan]).astype('int64')
         self.input_b = np.array([2, np.inf, -np.inf]).astype('int64')
         self.input_c = np.array([4, 1, 3]).astype('int64')
+        self.input_nan_a = np.array([0, np.nan, np.nan]).astype('float32')
+        self.input_nan_b = np.array([0, 1, 2]).astype('float32')
 
         self.np_expected1 = np.minimum(self.input_x, self.input_y)
         self.np_expected2 = np.minimum(self.input_x, self.input_z)
         self.np_expected3 = np.minimum(self.input_a, self.input_c)
         self.np_expected4 = np.minimum(self.input_b, self.input_c)
+        self.np_expected_nan = np.minimum(self.input_nan_a, self.input_nan_b)
 
     def test_static_api(self):
         paddle.enable_static()
@@ -92,6 +95,21 @@ class ApiMinimumTest(unittest.TestCase):
                 fetch_list=[result_max],
             )
         np.testing.assert_allclose(res, self.np_expected4, rtol=1e-05)
+
+        with paddle.static.program_guard(
+            paddle.static.Program(), paddle.static.Program()
+        ):
+            data_a = paddle.static.data("a", shape=[3], dtype="float32")
+            data_b = paddle.static.data("b", shape=[3], dtype="float32")
+            result_max = paddle.minimum(data_a, data_b)
+            exe = paddle.static.Executor(self.place)
+            (res,) = exe.run(
+                feed={"a": self.input_nan_a, "b": self.input_nan_b},
+                fetch_list=[result_max],
+            )
+        np.testing.assert_allclose(
+            res, self.np_expected_nan, rtol=1e-05, equal_nan=True
+        )
 
     def test_dynamic_api(self):
         paddle.disable_static()
