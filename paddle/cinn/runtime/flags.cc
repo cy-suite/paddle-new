@@ -89,7 +89,7 @@ PD_DEFINE_bool(cinn_enable_rearrange_load,
                "Whether to enable rearranging load instructions.");
 
 PD_DEFINE_bool(cinn_enable_vectorize,
-               BoolFromEnv("FLAGS_cinn_enable_vectorize", false),
+               BoolFromEnv("FLAGS_cinn_enable_vectorize", true),
                "Whether to enable the grid reduce method.");
 
 PD_DEFINE_bool(cinn_use_op_fusion,
