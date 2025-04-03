@@ -52,6 +52,15 @@ void PSendKernel(const Context& dev_ctx,
 }
 
 template <typename T, typename Context>
+void PSend2Kernel(const Context& dev_ctx,
+                  const DenseTensor& x,
+                  int ring_id,
+                  int peer,
+                  bool dynamic_shape) {
+  PSendKernel<T, Context>(dev_ctx, x, peer, dynamic_shape);
+}
+
+template <typename T, typename Context>
 void PSendArrayKernel(const Context& dev_ctx,
                       const TensorArray& x_array,
                       int peer) {
@@ -94,6 +103,21 @@ PD_REGISTER_KERNEL(p_send,
                    phi::dtype::bfloat16,
                    phi::dtype::float16) {}
 
+PD_REGISTER_KERNEL(p_send2,
+                   GPU,
+                   ALL_LAYOUT,
+                   phi::PSend2Kernel,
+                   float,
+                   double,
+                   int,
+                   bool,
+                   int8_t,
+                   uint8_t,
+                   int16_t,
+                   int64_t,
+                   phi::dtype::bfloat16,
+                   phi::dtype::float16) {}
+
 PD_REGISTER_KERNEL(p_send_array,
                    GPU,
                    ALL_LAYOUT,
@@ -112,6 +136,20 @@ PD_REGISTER_KERNEL(p_send,
                    GPU,
                    ALL_LAYOUT,
                    phi::PSendKernel,
+                   float,
+                   double,
+                   int,
+                   bool,
+                   int8_t,
+                   uint8_t,
+                   int16_t,
+                   int64_t,
+                   phi::dtype::float16) {}
+
+PD_REGISTER_KERNEL(p_send2,
+                   GPU,
+                   ALL_LAYOUT,
+                   phi::PSend2Kernel,
                    float,
                    double,
                    int,

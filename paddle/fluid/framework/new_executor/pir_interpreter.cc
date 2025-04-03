@@ -550,8 +550,8 @@ void PirInterpreter::UpdateNcclOpNum() {
       "pd_op.partial_send",
       "pd_op.partial_recv",
       "pd_op.partial_allgather",
-      "pd_op.recv_v2",
-      "pd_op.send_v2",
+      "pd_op.p_recv",
+      "pd_op.p_send",
       "pd_op.mp_allreduce_sum",
       "pd_op.barrier",
       "pd_op.all_to_all",
@@ -586,8 +586,8 @@ void PirInterpreter::UpdateNcclOpNum() {
       "pd_op.partial_send_grad",
       "pd_op.partial_recv_grad",
       "pd_op.partial_allgather_grad",
-      "pd_op.recv_v2_grad",
-      "pd_op.send_v2_grad",
+      "pd_op.p_recv_grad",
+      "pd_op.p_send_grad",
       "pd_op.mp_allreduce_sum_grad",
       "pd_op.barrier_grad",
       "pd_op.alltoall_grad",
@@ -625,8 +625,8 @@ void PirInterpreter::UpdateNcclOpNum() {
       "pd_op.partial_send_",
       "pd_op.partial_recv_",
       "pd_op.partial_allgather_",
-      "pd_op.recv_v2_",
-      "pd_op.send_v2_",
+      "pd_op.p_recv_",
+      "pd_op.p_send_",
       "pd_op.mp_allreduce_sum_",
       "pd_op.barrier_",
       "pd_op.alltoall_",
@@ -661,8 +661,8 @@ void PirInterpreter::UpdateNcclOpNum() {
       "pd_op.partial_send_grad_",
       "pd_op.partial_recv_grad_",
       "pd_op.partial_allgather_grad_",
-      "pd_op.recv_v2_grad_",
-      "pd_op.send_v2_grad_",
+      "pd_op.p_recv_grad_",
+      "pd_op.p_send_grad_",
       "pd_op.mp_allreduce_sum_grad_",
       "pd_op.barrier_grad_",
       "pd_op.alltoall_grad_",
@@ -1203,10 +1203,10 @@ void PirInterpreter::RecordStreamForGC(InstructionBase* instr) {
   bool skip_record_stream = true;
   gpuStream_t stream =
       reinterpret_cast<const phi::GPUContext&>(instr->DeviceContext()).stream();
-// TODO(lizhiyu): Only analyse the 'send_v2' for GPT pp strategy right now.
+// TODO(lizhiyu): Only analyse the 'p_send' for GPT pp strategy right now.
 // To support all the operators for communicating in the future.
 #if defined(PADDLE_WITH_NCCL) || defined(PADDLE_WITH_RCCL)
-  if (instr->Name() == "pd_op.send_v2") {
+  if (instr->Name() == "pd_op.p_send") {
     ::pir::Operation* op = instr->Operation();
     if (op->HasAttribute("use_calc_stream") &&
         op->attribute<::pir::BoolAttribute>("use_calc_stream").data() ==

@@ -38,7 +38,7 @@ class TestCollectiveSendRecv(TestCollectiveRunnerBase):
             tindata.desc.set_need_check_feed(False)
             if self.rank == 0:
                 main_prog.global_block().append_op(
-                    type="send_v2",
+                    type="p_send",
                     inputs={'X': tindata},
                     attrs={
                         'ring_id': ring_id,
@@ -48,7 +48,7 @@ class TestCollectiveSendRecv(TestCollectiveRunnerBase):
                 )
             else:
                 main_prog.global_block().append_op(
-                    type="recv_v2",
+                    type="p_recv",
                     outputs={'Out': tindata},
                     attrs={
                         'peer': 0,

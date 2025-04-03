@@ -364,7 +364,7 @@ class Inserter:
     @staticmethod
     def insert_send_op(block, idx, tensor, src, dst, op_role, sync=True):
         """Insert send op into block at the given index."""
-        op_type = 'send_v2'
+        op_type = 'p_send'
         insert_operation = (
             block._insert_op if sync else block._insert_op_without_sync
         )
@@ -387,7 +387,7 @@ class Inserter:
     @staticmethod
     def insert_recv_op(block, idx, tensor, src, dst, op_role, sync=True):
         """Insert recv op into block at the given index."""
-        op_type = 'recv_v2'
+        op_type = 'p_recv'
         insert_operation = (
             block._insert_op if sync else block._insert_op_without_sync
         )
@@ -3179,7 +3179,7 @@ class Resharder:
                     group_ranks = [key, op_desc.dst]
                     shape = op_desc.shape
                     send_desc = build_comm_desc(
-                        "send_v2", group_ranks, dtype, shape
+                        "p_send", group_ranks, dtype, shape
                     )
                     idx, is_the_same = _get_idx(comm_ranks, group_ranks)
                     if idx is None:

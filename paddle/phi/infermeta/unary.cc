@@ -3454,12 +3454,12 @@ void SendV2InferMeta(const int peer, const int ring_id) {
       peer,
       0,
       errors::InvalidArgument(
-          "The peer (%d) for send_v2 op must be non-negative.", peer));
+          "The peer (%d) for p_send op must be non-negative.", peer));
   PADDLE_ENFORCE_GE(
       ring_id,
       0,
       errors::InvalidArgument(
-          "The ring_id (%d) for send_v2 op must be non-negative.", ring_id));
+          "The ring_id (%d) for p_send op must be non-negative.", ring_id));
 }
 
 void PoolInferMeta(const MetaTensor& x,

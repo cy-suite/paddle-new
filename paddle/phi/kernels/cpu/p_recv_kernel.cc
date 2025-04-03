@@ -34,6 +34,17 @@ void PRecvKernel(const Context& dev_ctx UNUSED,
 }
 
 template <typename T, typename Context>
+void PRecv2Kernel(const Context& dev_ctx UNUSED,
+                  int ring_id UNUSED,
+                  int peer UNUSED,
+                  DataType dtype UNUSED,
+                  const std::vector<int>& out_shape UNUSED,
+                  bool dynamic_shape UNUSED,
+                  DenseTensor* out UNUSED) {
+  PADDLE_THROW(errors::Unavailable("Do not support recv for cpu kernel now."));
+}
+
+template <typename T, typename Context>
 void PRecvArrayKernel(const Context& dev_ctx UNUSED,
                       int peer UNUSED,
                       DataType dtype UNUSED,
@@ -49,6 +60,20 @@ PD_REGISTER_KERNEL(p_recv,
                    CPU,
                    ALL_LAYOUT,
                    phi::PRecvKernel,
+                   float,
+                   double,
+                   int,
+                   bool,
+                   int8_t,
+                   uint8_t,
+                   int16_t,
+                   int64_t,
+                   phi::dtype::float16) {}
+
+PD_REGISTER_KERNEL(p_recv2,
+                   CPU,
+                   ALL_LAYOUT,
+                   phi::PRecv2Kernel,
                    float,
                    double,
                    int,

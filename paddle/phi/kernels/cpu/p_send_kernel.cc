@@ -32,6 +32,15 @@ void PSendKernel(const Context& dev_ctx UNUSED,
 }
 
 template <typename T, typename Context>
+void PSend2Kernel(const Context& dev_ctx UNUSED,
+                  const DenseTensor& x UNUSED,
+                  int ring_id UNUSED,
+                  int peer UNUSED,
+                  bool dynamic_shape UNUSED) {
+  PADDLE_THROW(errors::Unavailable("Do not support send for cpu kernel now."));
+}
+
+template <typename T, typename Context>
 void PSendArrayKernel(const Context& dev_ctx UNUSED,
                       const TensorArray& x UNUSED,
                       int peer UNUSED,
@@ -61,6 +70,20 @@ PD_REGISTER_KERNEL(p_send_array,
                    CPU,
                    ALL_LAYOUT,
                    phi::PSendArrayKernel,
+                   float,
+                   double,
+                   int,
+                   bool,
+                   int8_t,
+                   uint8_t,
+                   int16_t,
+                   int64_t,
+                   phi::dtype::float16) {}
+
+PD_REGISTER_KERNEL(p_send2,
+                   CPU,
+                   ALL_LAYOUT,
+                   phi::PSend2Kernel,
                    float,
                    double,
                    int,
