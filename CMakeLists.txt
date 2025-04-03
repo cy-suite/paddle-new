@@ -312,6 +312,7 @@ option(
   "Choose the type of sanitizer, options are: Address, Leak, Memory, Thread, Undefined"
   OFF)
 option(WITH_CINN "Compile PaddlePaddle with CINN" OFF)
+option(WITH_FLAGCX "Compile PaddlePaddle with FLAGCX support" ON)
 option(WITH_NCCL "Compile PaddlePaddle with NCCL support" ON)
 option(WITH_FLAGCX "Compile PaddlePaddle with FLAGCX support" OFF)
 option(WITH_RCCL "Compile PaddlePaddle with RCCL support" ON)
