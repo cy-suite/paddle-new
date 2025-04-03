@@ -290,4 +290,44 @@ TEST(Simplify, Case2) {
   ASSERT_TRUE((SimplifyDimExpr(dim_expr)) == expected);
 }
 
+TEST(ParseDimExprFromStr, Case1) {
+  // Div(Mul(S2, S3, 8, 7, 7), Mul( Div(S0, 7), Div(S1, 7), 8, 7, 7，1, 2))
+  DimExpr S2{"S2"};
+  DimExpr S3{"S3"};
+  DimExpr mul_op1 =
+      Mul<DimExpr>{List<DimExpr>{S2, S3, DimExpr(8), DimExpr(7), DimExpr(7)}};
+
+  DimExpr S0{"S0"};
+  DimExpr S1{"S1"};
+  DimExpr mul_op2 = Mul<DimExpr>{List<DimExpr>{Div<DimExpr>{S0, DimExpr(7)},
+                                               Div<DimExpr>{S1, DimExpr(7)},
+                                               DimExpr(8),
+                                               DimExpr(7),
+                                               DimExpr(7),
+                                               DimExpr(1),
+                                               DimExpr(2)}};
+  DimExpr dim_expr{Div<DimExpr>{mul_op1, mul_op2}};
+  std::string case1 =
+      "Div(Mul(S2, S3, 8, 7, 7), Mul( Div(S0, 7), Div(S1, 7), 8, 7, 7, 1, 2))";
+  ASSERT_TRUE((symbol::ParseDimExprFromStr(case1) == dim_expr));
+
+  // S0
+  ASSERT_TRUE((symbol::ParseDimExprFromStr("S0") == S0));
+
+  // 1
+  ASSERT_TRUE((symbol::ParseDimExprFromStr("1") == DimExpr(1)));
+
+  // -1
+  ASSERT_TRUE(
+      (symbol::ParseDimExprFromStr("-1") == Negative<DimExpr>{DimExpr(1)}));
+
+  // -Mul(S0, 1)
+  ASSERT_TRUE((symbol::ParseDimExprFromStr("-Mul(S0, 1)") ==
+               Negative<DimExpr>{Mul<DimExpr>{{S0, DimExpr(1)}}}));
+
+  // Div(S0, 1)
+  ASSERT_TRUE((symbol::ParseDimExprFromStr("Div(S0, 1)") ==
+               Div<DimExpr>{S0, DimExpr(1)}));
+}
+
 }  // namespace symbol::test
