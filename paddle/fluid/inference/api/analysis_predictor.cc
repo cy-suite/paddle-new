@@ -86,6 +86,7 @@
 #include "paddle/fluid/inference/tensorrt/convert/op_converter.h"
 #include "paddle/fluid/inference/tensorrt/helper.h"
 #include "paddle/fluid/inference/tensorrt/trt_int8_calibrator.h"
+#include "paddle/fluid/operators/tensorrt/tensorrt_engine_op.h"
 #endif
 
 #ifdef PADDLE_WITH_IPU
@@ -2025,6 +2026,7 @@ void AnalysisPredictor::PrepareArgument() {
     argument_->SetTensorRtDisabledOPs(config_.trt_disabled_ops_);
     argument_->SetTRTExcludeVarNames(config_.trt_exclude_var_names_);
     argument_->SetTRTForbidDynamicOp(config_.trt_forbid_dynamic_op_);
+    argument_->SetRefitParamsPath(config_.refit_params_path_);
 
     argument_->SetTensorRtUseDLA(config_.trt_use_dla_);
     argument_->SetTensorRtDLACore(config_.trt_dla_core_);
@@ -2244,6 +2246,12 @@ void AnalysisPredictor::OptimizeInferenceProgram() {
                 PADDLE_GET_CONST(int, op_desc->GetAttr("predictor_id"));
             std::string engine_name =
                 engine_key + std::to_string(engine_predictor_id);
+            auto &manager = paddle::inference::Singleton<
+                inference::tensorrt::TRTEngineManager>::Global();
+            auto all_engine_names = manager.GetAllEngineNames();
+            LOG(INFO) << "all_engine_names.size" << all_engine_names.size();
+            LOG(INFO) << "All engine names in TRTEngineManager:";
+
             if (paddle::inference::Singleton<
                     inference::tensorrt::TRTEngineManager>::Global()
                     .Has(engine_name)) {
@@ -2256,6 +2264,44 @@ void AnalysisPredictor::OptimizeInferenceProgram() {
 #endif
         delete prog;
       });
+
+  // #ifdef PADDLE_WITH_TENSORRT
+  //   const auto &global_block = inference_program_->MutableBlock(0);
+  //   std::unique_ptr<framework::ProgramDesc> load_program(
+  //       new framework::ProgramDesc());
+  //   framework::BlockDesc *load_block = load_program->MutableBlock(0);
+  //   for (auto *var : global_block->AllVars()) {
+  //     if (IsPersistable(var)) {
+  //       VLOG(0) << "persistable variable's name: " << var->Name();
+  //       framework::VarDesc *new_var = load_block->Var(var->Name());
+  //       new_var->SetShape(var->GetShape());
+  //       new_var->SetDataType(var->GetDataType());
+  //       new_var->SetType(var->GetType());
+  //       new_var->SetLoDLevel(var->GetLoDLevel());
+  //       new_var->SetPersistable(true);
+  //       if(!config_.refit_params_path().empty())
+  //       {
+  //         LOG(INFO)<<"加载进来的new_var->Name():"<<new_var->Name();
+  //         refit_weight_names_.push_back(new_var->Name());
+  //         auto *var = sub_scope_->FindVar(new_var->Name());
+  //         auto &tensor_in_scope = var->Get<phi::DenseTensor>();
+  //         refit_weight_tensors_.push_back(tensor_in_scope);
+  //         LOG(INFO)<<"结束";
+  //       }
+  //     }
+  //   }
+  //   for (auto &op_desc : inference_program_->Block(0).AllOps()) {
+  //     if(!config_.refit_params_path().empty())
+  //     {
+  //       if(op_desc->Type()=="tensorrt_engine")
+  //       {
+  //         LOG(INFO)<<"查到了tensorrt_engine op";
+  //         op_desc->SetAttr("refit_params_name",refit_weight_names_);
+  //       }
+  //     }
+  //   }
+
+  // #endif
 
 #if defined(PADDLE_WITH_TESTING)
   fusion_statis_ = *argument_->fusion_statis_ptr();
@@ -2982,6 +3028,7 @@ bool AnalysisPredictor::LoadProgramDesc() {
   // Create ProgramDesc
   framework::proto::ProgramDesc proto;
   if (!config_.model_from_memory()) {
+    LOG(INFO) << "filename" << filename;
     std::string pb_content;
     // Read binary
     std::ifstream fin(filename, std::ios::in | std::ios::binary);
@@ -3009,10 +3056,15 @@ bool AnalysisPredictor::LoadParameters() {
   PADDLE_ENFORCE_NOT_NULL(inference_program_.get(),
                           common::errors::PreconditionNotMet(
                               "The inference program should be loaded first."));
-
+  LOG(INFO) << "加载LoadParameters了";
+  // OptimizeInferenceProgram();
   const auto &global_block = inference_program_->MutableBlock(0);
 
+  std::vector<std::string> all_weight_names;
+  std::vector<phi::DenseTensor> all_weight_tensors;
+
   // create a temporary program to load parameters.
+  LOG(INFO) << "config_.params_file():" << config_.params_file();
 
   std::unique_ptr<framework::ProgramDesc> load_program(
       new framework::ProgramDesc());
@@ -3022,7 +3074,6 @@ bool AnalysisPredictor::LoadParameters() {
   for (auto *var : global_block->AllVars()) {
     if (IsPersistable(var)) {
       VLOG(3) << "persistable variable's name: " << var->Name();
-
       framework::VarDesc *new_var = load_block->Var(var->Name());
       new_var->SetShape(var->GetShape());
       new_var->SetDataType(var->GetDataType());
@@ -3030,8 +3081,18 @@ bool AnalysisPredictor::LoadParameters() {
       new_var->SetLoDLevel(var->GetLoDLevel());
       new_var->SetPersistable(true);
 
+      // if (!config_.refit_params_path().empty()) {
+      //   LOG(INFO)<<"加载进来的new_var->Name():"<<new_var->Name();
+      //   all_weight_names.push_back(new_var->Name());
+      //   auto *var = sub_scope_->FindVar(new_var->Name());
+      //   auto &tensor_in_scope = var->Get<phi::DenseTensor>();
+      //   all_weight_tensors.push_back(tensor_in_scope);
+      // }
+
       if (!config_.params_file().empty()) {
+        LOG(INFO) << "new_var->Name():" << new_var->Name();
         params.push_back(new_var->Name());
+        LOG(INFO) << "Total params count: " << params.size();
       } else {
         // append_op
         framework::OpDesc *op = load_block->AppendOp();
@@ -3053,6 +3114,14 @@ bool AnalysisPredictor::LoadParameters() {
     op->SetAttr("file_path", {config_.params_file()});
     op->CheckAttrs();
   }
+  // if(!config_.refit_params_path().empty()) {
+  //   std::sort(all_weight_names.begin(), all_weight_names.end());
+  //   framework::OpDesc *op = load_block->AppendOp();
+  //   op->SetType("load_combine");
+  //   op->SetOutput("Out", params);
+  //   op->SetAttr("refit_params_path", {config_.refit_params_path()});
+  //   op->CheckAttrs();
+  // }
 
   // Use NaiveExecutor to Load parameters.
   framework::NaiveExecutor e(place_);
@@ -3060,6 +3129,137 @@ bool AnalysisPredictor::LoadParameters() {
   e.Run();
   VLOG(3) << "get " << scope_->LocalVarNames().size() << " vars after load";
 
+  // 判断scope中是否加载进去了var
+  //   for (const auto& param_name : params) {
+  //     LOG(INFO)<<"param_name:"<<param_name;
+  //     auto* var = scope()->FindVar(param_name);
+  //     if (var != nullptr && var->IsType<phi::DenseTensor>()) {
+  //         auto* tensor = var->GetMutable<phi::DenseTensor>();
+
+  //         // 获取张量的维度和元素总数
+  //         int numel = tensor->numel();
+
+  //         std::cout << "Parameter: " << param_name << std::endl;
+  //         std::cout << "numel: " << numel << std::endl;
+
+  //         // 检查张量是否在CPU上，如果在GPU上需要先复制到CPU
+  //         if (tensor->place().GetType() == phi::AllocationType::GPU) {
+  //             // 创建一个CPU张量来存储数据
+  //             phi::DenseTensor cpu_tensor;
+  //             cpu_tensor.Resize(tensor->dims());
+
+  //             // 分配CPU内存
+  //             phi::CPUPlace cpu_place;
+  //             cpu_tensor.mutable_data<float>(cpu_place);
+
+  //             // 从GPU复制到CPU
+  //             paddle::memory::Copy(
+  //                 cpu_place,
+  //                 cpu_tensor.data<float>(),
+  //                 tensor->place(),
+  //                 tensor->data<float>(),
+  //                 numel * sizeof(float));
+
+  //             // 打印CPU上的数据
+  //             const float* data = cpu_tensor.data<float>();
+  //             std::cout << "Tensor values: ";
+  //             for (int i = 0; i < numel && i < 100; ++i) { // 限制打印的数量
+  //                 std::cout << data[i] << " ";
+  //             }
+  //             if (numel > 100) {
+  //                 std::cout << "... (showing first 100 elements only)";
+  //             }
+  //         } else {
+  //             // 如果张量在CPU上，直接访问数据
+  //             const float* data = tensor->data<float>();
+  //             if (data != nullptr) {
+  //                 std::cout << "Tensor values: ";
+  //                 for (int i = 0; i < numel && i < 100; ++i) { //
+  //                 限制打印的数量
+  //                     std::cout << data[i] << " ";
+  //                 }
+  //                 if (numel > 100) {
+  //                     std::cout << "... (showing first 100 elements only)";
+  //                 }
+  //             } else {
+  //                 std::cout << "Data pointer is null";
+  //             }
+  //         }
+  //         std::cout << std::endl;
+  //     } else {
+  //         std::cout << "Parameter " << param_name << " not found or not a
+  //         DenseTensor." << std::endl;
+  //     }
+  // }
+  // if (!config_.refit_params_path().empty()) {
+  //   LOG(INFO) << "Begin to refit TRT Weights from path:"
+  //             << config_.refit_params_path();
+  //   for (auto &op_desc : inference_program_->Block(0).AllOps()) {
+  //     if (op_desc->Type() == "tensorrt_engine") {
+  //       std::string engine_key =
+  //           PADDLE_GET_CONST(std::string, op_desc->GetAttr("engine_key"));
+  //       int engine_predictor_id =
+  //           PADDLE_GET_CONST(int, op_desc->GetAttr("predictor_id"));
+  //       std::string engine_name =
+  //           engine_key + std::to_string(engine_predictor_id);
+  //       bool has_engine =
+  //           inference::Singleton<
+  //               inference::tensorrt::TRTEngineManager>::Global()
+  //               .Has(engine_key + std::to_string(engine_predictor_id));
+  //       if (!has_engine) {
+  //         //
+  //         CreateTrtEngine(engine_name,engine_key,engine_predictor_id,place_,config_);
+  //         LOG(INFO) << "创建engine_name";
+  //       }
+  //       if (paddle::inference::Singleton<
+  //               inference::tensorrt::TRTEngineManager>::Global()
+  //               .Has(engine_name)) {
+  //         LOG(INFO) << "没获取到engine_name?";
+  //         auto *engine = inference::Singleton<
+  //                            inference::tensorrt::TRTEngineManager>::Global()
+  //                            .Get(engine_name);
+  //         std::vector<std::string> param_list;
+  //         if (op_desc->HasAttr("parameters")) {
+  //           param_list = PADDLE_GET_CONST(std::vector<std::string>,
+  //                                         op_desc->GetAttr("parameters"));
+  //           for (const std::string &param : param_list) {
+  //             LOG(INFO) << "param name:" << param;
+  //           }
+  //         } else {
+  //           LOG(WARNING) << "No parameters attribute found in " <<
+  //           engine_name
+  //                        << ", skip refit.";
+  //           continue;
+  //         }
+  //         std::unordered_set<std::string> engine_params(param_list.begin(),
+  //                                                       param_list.end());
+  //         bool need_finalize = false;
+  //         for (size_t i = 0; i < all_weight_names.size(); ++i) {
+  //           const std::string &wname = all_weight_names[i];
+  //           if (!engine_params.count(wname)) {
+  //             continue;
+  //           }
+  //           const phi::DenseTensor &new_weight_tensor =
+  //           all_weight_tensors[i]; bool success =
+  //           engine->setRefitWeights(wname, new_weight_tensor); if (!success)
+  //           {
+  //             LOG(ERROR) << "Failed to refit weight";
+  //             continue;
+  //           }
+  //           need_finalize = true;
+  //         }
+  //         if (need_finalize) {
+  //           bool FinalRefit = engine->FinalizeRefit();
+  //           if (!FinalRefit) {
+  //             LOG(ERROR) << "Failed to finalize refit";
+  //             continue;
+  //           }
+  //           LOG(INFO) << "Refit engine [" << engine_name << "] finished.";
+  //         }
+  //       }
+  //     }
+  //   }
+  // }
   return true;
 }
 

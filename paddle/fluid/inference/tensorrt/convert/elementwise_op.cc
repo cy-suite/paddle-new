@@ -165,7 +165,15 @@ class ElementwiseTensorOpConverter : public OpConverter {
       auto* layer = TRT_ENGINE_ADD_LAYER(
           engine_, ElementWise, *X, *reshape_y_tensor, op_pair->second);
       SupportFP32MixPrecision(output_name, op_desc.Type(), layer);
-      ReplenishLayerAndOutput(layer, "elementwise", {output_name}, test_mode);
+      if (op_type_ == "add") {
+        ReplenishLayerAndOutput(
+            layer, "elementwise", {output_name}, test_mode, "elementwise_add");
+      } else if (op_type_ == "mul") {
+        ReplenishLayerAndOutput(
+            layer, "elementwise", {output_name}, test_mode, "elementwise_mul");
+      } else {
+        ReplenishLayerAndOutput(layer, "elementwise", {output_name}, test_mode);
+      }
     }
   }
 

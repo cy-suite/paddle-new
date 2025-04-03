@@ -570,8 +570,11 @@ nvinfer1::ITensor *TensorRTEngine::ConvertWeight2ITensor(
     trt_in_shape.nbDims = 0;
     trt_in_shape.d[0] = var_dims[0];
   }
+  LOG(INFO)<<"ConvertWeight2ITensor: name="<<name;
   nvinfer1::ILayer *layer =
       TRT_ENGINE_ADD_LAYER(this, Constant, trt_in_shape, weight.get());
+  layer->setName(("weight_constant_"+name).c_str());
+  layer->getOutput(0)->setName(("weight_output_"+name).c_str());
   if (!scalar) {
     this->SetITensor(name, layer->getOutput(0));
   }

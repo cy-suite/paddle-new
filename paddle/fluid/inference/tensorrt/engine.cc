@@ -16,7 +16,6 @@ limitations under the License. */
 #include <NvInfer.h>
 #include <glog/logging.h>
 #include <string>
-
 #include "NvInferRuntimeCommon.h"
 #include "cuda_runtime_api.h"  // NOLINT
 
@@ -324,6 +323,13 @@ void TensorRTEngine::FreezeNetwork() {
     }
   }
 
+  if (!refit_params_path().empty()) {
+    LOG(INFO)<<"设置krefit";
+    infer_builder_config_->setFlag(nvinfer1::BuilderFlag::kREFIT);
+    VLOG(0) << "TensorRT Refittable enabled in FreezeNetwork()";
+  }
+ 
+
   if (with_dynamic_shape()) {
     LOG(INFO) << "Run Paddle-TRT Dynamic Shape mode.";
     for (int i = 0; i < max_profile_num_; i++) {
@@ -466,6 +472,29 @@ void TensorRTEngine::FreezeNetwork() {
   }
   if (params_.use_inspector) {
     GetEngineInfo(params_.engine_info_path);
+  }
+}
+
+void TensorRTEngine::InitRefitter()
+{
+  infer_builder_.reset(createInferBuilder(&logger_));
+  PADDLE_ENFORCE_NOT_NULL(
+      infer_builder_,
+      common::errors::Fatal("Failed to recreate TensorRT builder"));
+  infer_builder_config_.reset(infer_builder_->createBuilderConfig());
+  PADDLE_ENFORCE_NOT_NULL(
+      infer_builder_config_,
+      common::errors::Fatal("Failed to recreate builder config"));
+  infer_builder_config_->setFlag(nvinfer1::BuilderFlag::kREFIT);
+  LOG(INFO)<<"设置了krefit了吧";
+  if(!infer_refitter_ && infer_engine_)
+  {
+    LOG(INFO)<<"infer_refitter_ is created.";
+    infer_refitter_.reset(createInferRefitter(infer_engine_.get(), &logger_));
+    PADDLE_ENFORCE_NOT_NULL(
+        infer_refitter_,
+        common::errors::InvalidArgument(
+            "Failed to create refitter for the TRT engine."));
   }
 }
 
@@ -894,6 +923,84 @@ TensorRTEngine::Weight TensorRTEngine::GetTrtWeight(
 
   name_suffix_counter += 1;
   return weight;
+}
+
+bool TensorRTEngine::setRefitWeights(
+    const std::string &weight_name, const phi::DenseTensor &new_weight_tensor) {
+  LOG(INFO)<<"Checking infer_refitter_ status...";
+  InitRefitter();
+  if(!infer_engine_->isRefittable())
+  {
+    LOG(ERROR) << "引擎未启用重拟合能力，请检查："
+               << "1. 是否设置kREFIT和kREFIT_ALL_WEIGHTS标志\n"
+               << "2. 是否使用相同TRT版本序列化/反序列化";
+    return false;
+  }
+  PADDLE_ENFORCE_NOT_NULL(
+      infer_refitter_,
+      common::errors::InvalidArgument(
+          "Refitter is not initialized. Make sure you enabled refit at build "
+          "time by calling use_refittable()."));
+  LOG(INFO)<<"weight_name "<<weight_name;
+  LOG(INFO)<<"new_weight_tensor.numel() "<<new_weight_tensor.dims();
+  // auto new_weights = this->GetTrtWeight(weight_name, new_weight_tensor);
+  LOG(INFO)<<"new_weights拿到了吗";
+  // const nvinfer1::Weights &final_weights = new_weights.get();
+  int32_t total_refit_weights =infer_refitter_->getAllWeights(0,nullptr);
+  LOG(INFO) << "Total refittable weights: " << total_refit_weights;
+
+  if(total_refit_weights>0)
+  {
+    std::vector<const char*> weight_names(total_refit_weights,nullptr);
+    int32_t actual_count=infer_refitter_->getAllWeights(total_refit_weights,weight_names.data());
+    LOG(INFO)<<"Actual refitable weights returned:"<<actual_count;
+    
+    for(int i=0;i<actual_count;++i)
+    {
+      if(weight_names[i])
+      {
+        std::cout<<"Refit weight "<<i<<": "<<weight_names[i]<< std::endl;
+        auto layer_weights =this->GetTrtWeight(weight_names[i],new_weight_tensor);
+        const nvinfer1::Weights &final_weights = layer_weights.get();
+        bool set_result =
+          infer_refitter_->setNamedWeights(weight_names[i], final_weights);
+        if (!set_result) {
+          PADDLE_ENFORCE_EQ(
+              set_result,
+              true,
+              common::errors::InvalidArgument(
+                  "Failed to set named weights for weight '%s' during refitting.",
+                  weight_name.c_str()));
+          return false;
+        }
+      }
+    }
+  }
+
+  
+  return true;
+}
+
+bool TensorRTEngine::FinalizeRefit() {
+  PADDLE_ENFORCE_NOT_NULL(
+      infer_refitter_,
+      phi::errors::InvalidArgument(
+          "Refit is not initialize.Make sure you enabled refit."));
+  int missing_count = infer_refitter_->getMissingWeights(0, nullptr);
+  if (missing_count > 0) {
+    std::vector<const char *> missing_names(missing_count);
+    infer_refitter_->getMissingWeights(missing_count, missing_names.data());
+    for (int i = 0; i < missing_count; ++i) {
+      LOG(ERROR) << "Missing weight: " << missing_names[i];
+    }
+    return false;
+  }
+  bool success = infer_refitter_->refitCudaEngine();
+  if (!success) {
+    LOG(ERROR) << "Failed to refit engine.";
+    return false;
+  }
+  return success;
 }
 
 nvinfer1::IPluginV2Layer *TensorRTEngine::AddPlugin(

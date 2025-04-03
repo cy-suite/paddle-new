@@ -43,6 +43,7 @@
 #include "paddle/phi/kernels/cast_kernel.h"
 #include "paddle/phi/kernels/funcs/data_type_transform.h"
 #include "paddle/utils/string/string_helper.h"
+// #include "paddle/fliud/inference/api/paddle_analysis_config.h"
 
 namespace paddle {
 namespace inference {
@@ -955,6 +956,16 @@ class TensorRTEngineOp : public framework::OperatorBase {
     }
   }
 
+  bool IsPersistable(const framework::VarDesc *var) const {
+    if (var->Persistable() &&
+        var->GetType() != framework::proto::VarType::FEED_MINIBATCH &&
+        var->GetType() != framework::proto::VarType::FETCH_LIST &&
+        var->GetType() != framework::proto::VarType::RAW) {
+      return true;
+    }
+    return false;
+  }
+
   TensorRTEngine *GetEngine(const framework::Scope &scope,
                             const phi::Place &dev_place) const {
     if (!trt_engine_) {
@@ -974,6 +985,10 @@ class TensorRTEngineOp : public framework::OperatorBase {
       if (HasAttr("dla_core")) {
         params.dla_core = Attr<int>("dla_core");
       }
+      if (HasAttr("refit_params_path")) {
+        params.refit_params_path = Attr<std::string>("refit_params_path");
+      }
+      LOG(INFO) << "params.refit_params_path=" << params.refit_params_path;
       if (HasAttr("disable_trt_plugin_fp16")) {
         params.disable_trt_plugin_fp16 = Attr<bool>("disable_trt_plugin_fp16");
       }
@@ -1043,15 +1058,29 @@ class TensorRTEngineOp : public framework::OperatorBase {
       trt_engine_ =
           inference::Singleton<inference::tensorrt::TRTEngineManager>::Global()
               .Create(engine_key_ + std::to_string(predictor_id_), params);
+      bool has_engine =
+        inference::Singleton<inference::tensorrt::TRTEngineManager>::Global()
+            .Has(engine_key_ + std::to_string(predictor_id_));
+      
+      LOG(INFO)<<"has_engine"<<has_engine;
 
       if (use_static_engine_) {
         LOG(INFO) << "Load TRT Optimized Info from "
                   << inference::analysis::GetTrtEngineSerializedPath(
                          model_opt_cache_dir_, engine_key_);
+        std::vector<std::string> all_weight_names;
+        std::vector<phi::DenseTensor> all_weight_tensors;
         std::string trt_engine_serialized_data =
             inference::analysis::GetTrtEngineSerializedData(
                 model_opt_cache_dir_, engine_key_);
         trt_engine_->Deserialize(trt_engine_serialized_data);
+        if (!params.refit_params_path.empty())
+        {
+          LOG(INFO)<<"Begin to refit TRT Weights from path:"<<params.refit_params_path;
+          
+      
+        }
+
       } else {
         // This branch mainly used to ut.
         PrepareTRTEngine(scope, trt_engine_);

@@ -517,7 +517,8 @@ AnalysisConfig::AnalysisConfig(const AnalysisConfig &other) {
   CP_MEMBER(trt_parameters_run_fp16_);
   CP_MEMBER(trt_parameters_run_int8_);
   CP_MEMBER(trt_parameters_run_bfp16_);
-  CP_MEMBER(trt_forbid_dynamic_op_)
+  CP_MEMBER(trt_forbid_dynamic_op_);
+  CP_MEMBER(refit_params_path_);
   CP_MEMBER(trt_output_tensor_names_);
   CP_MEMBER(trt_disabled_ops_);
   CP_MEMBER(trt_use_dla_);
@@ -798,6 +799,11 @@ void AnalysisConfig::MarkTrtEngineOutputs(
 void AnalysisConfig::Exp_DisableTensorRTDynamicShapeOPs(
     bool trt_forbid_dynamic_op) {
   trt_forbid_dynamic_op_ = trt_forbid_dynamic_op;
+}
+
+void AnalysisConfig::TensorRTRefitParamsPath(
+    const std::string &refit_params_path) {
+  refit_params_path_ = refit_params_path;
 }
 
 void AnalysisConfig::EnableTensorRTMemoryOptim(bool engine_memory_sharing,
@@ -1128,6 +1134,7 @@ std::string AnalysisConfig::SerializeInfoCache() {
   for (auto &name : trt_parameters_run_bfp16_) ss << name.c_str();
   ss << ";";
   ss << trt_forbid_dynamic_op_;
+  ss << refit_params_path_;
 
   for (auto &op : trt_disabled_ops_) ss << op.c_str();
   ss << ";";
@@ -1349,6 +1356,7 @@ std::string AnalysisConfig::Summary() {
         os << major << "." << minor << "." << patch;
         return os.str();
       };
+      os.InsertRow({"trt_refit_params_path", refit_params_path_});
       os.InsertRow(
           {"trt_compile_version",
            version2string(inference::tensorrt::GetTrtCompileVersion())});
@@ -1393,6 +1401,7 @@ std::string AnalysisConfig::Summary() {
       os.InsertRow({"trt_mark_output", trt_mark_output_ ? "true" : "false"});
       os.InsertRow(
           {"trt_forbid_dynamic_op", trt_forbid_dynamic_op_ ? "true" : "false"});
+
 #endif
     }
   }

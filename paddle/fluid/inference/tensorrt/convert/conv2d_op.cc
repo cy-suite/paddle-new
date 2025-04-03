@@ -180,6 +180,7 @@ void ConvertConv2d(TensorRTEngine* engine,
   fset_dilation(layer, nv_dilations);
 
   auto output_name = op_desc.Output("Output").front();
+  // layer->setName(hash(op_desc)+"_conv");
   layer->setName((name + " (Output: " + output_name + ")").c_str());
   layer->getOutput(0)->setName(output_name.c_str());
   engine->SetITensor(output_name, layer->getOutput(0));

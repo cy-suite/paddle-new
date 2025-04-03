@@ -788,12 +788,19 @@ class OpConverter {
       nvinfer1::ILayer* layer,
       const std::string& layer_type,
       const std::vector<std::string>& output_tensor_names,
-      bool test_mode = false) {
+      bool test_mode = false,
+      const std::string& custom_weight_name = "") {  //增加可选参数
     if (layer == nullptr) {
       return;
     }
     size_t num_out = output_tensor_names.size();
-    std::string layer_name = layer_type + " (Output: ";
+    std::string layer_name;
+    if (!custom_weight_name.empty()) {
+      layer_name = custom_weight_name;
+    } else {
+      layer_name = layer_type;
+    }
+    layer_name += "(Output:";
     for (size_t i = 0; i < num_out; i++) {
       layer->getOutput(i)->setName(output_tensor_names[i].c_str());
       engine_->SetITensor(output_tensor_names[i], layer->getOutput(i));
@@ -823,6 +830,7 @@ class OpConverter {
       //         "Error occurred in Paddle-TRT layer with output name: %s",
       //         output_tensor_names[i].c_str()));
     }
+    LOG(INFO) << "layer_name " << layer_name;
     layer->setName((layer_name + ")").c_str());
   }
   void SetEngine(TensorRTEngine* engine) { engine_ = engine; }

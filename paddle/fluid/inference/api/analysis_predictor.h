@@ -38,6 +38,7 @@
 #include <gtest/gtest_prod.h>
 #endif
 
+#include "paddle/fluid/inference/tensorrt/engine.h"
 #include "paddle/phi/common/data_type.h"
 #include "paddle/phi/core/dense_tensor.h"
 #include "paddle/pir/include/core/operation.h"
@@ -67,6 +68,8 @@ using framework::NaiveExecutor;
 using framework::proto::ProgramDesc;
 using inference::analysis::Analyzer;
 using inference::analysis::Argument;
+
+namespace tensorrt = paddle::inference::tensorrt;
 
 ///
 /// \class AnalysisPredictor
@@ -381,6 +384,12 @@ class AnalysisPredictor : public PaddlePredictor {
   ///
   bool LoadParameters();
 
+  // void CreateTrtEngine(const std::string &engine_name,
+  //                    const std::string &engine_key,
+  //                    int predictor_id,
+  //                    const phi::Place &dev_place,
+  //                    const AnalysisConfig &config);
+
   ///
   /// \brief Save or Load pir model parameters.
   ///
@@ -523,6 +532,8 @@ class AnalysisPredictor : public PaddlePredictor {
   std::vector<framework::OpDesc *> feeds_;
   std::vector<pir::Operation *> pir_feeds_;
   std::map<std::string, size_t> feed_names_;
+  std::vector<std::string> refit_weight_names_;
+  std::vector<phi::DenseTensor> refit_weight_tensors_;
   // Sorted according to the idx.
   std::map<size_t, std::string> idx2feeds_;
   std::map<std::string, std::vector<int64_t>> feed_name2shapes_;
@@ -532,6 +543,7 @@ class AnalysisPredictor : public PaddlePredictor {
   std::map<std::string, std::vector<int64_t>> fetch_name2shapes_;
 
   phi::DataType model_precision_{phi::DataType::FLOAT32};
+  tensorrt::TensorRTEngine *trt_engine_ = nullptr;
 
   // Memory buffer for feed inputs. The temporary DenseTensor will cause serious
   // concurrency problems, wrong results and memory leak, so cache them.
