@@ -187,6 +187,51 @@ class TestConverterResNet50(unittest.TestCase):
             err_msg="Outputs are not within the 0.9 tolerance",
         )
 
+    def test_paddle_to_tensorrt_conversion_r50_use_cuda_graph(self):
+        program, scope, param_dict = get_r50_program()
+
+        input_config = Input(
+            min_input_shape=(1, 3, 224, 224),
+            optim_input_shape=(1, 3, 224, 224),
+            max_input_shape=(4, 3, 224, 224),
+            input_data_type='float32',
+            name='input',
+        )
+        _, input_optim_data, _ = input_config.generate_input_data()
+
+        trt_config = TensorRTConfig(inputs=[input_config])
+        # use_cuda_graph: True
+        trt_config.use_cuda_graph = True
+
+        output_var = program.list_vars()[-1]
+
+        output_expected = predict_program(
+            program, {"input": input_optim_data}, [output_var]
+        )
+
+        program_with_trt = convert_to_trt(program, trt_config, scope)
+        output_var = program_with_trt.list_vars()[-1]
+
+        # warm up
+        predict_program(
+            program_with_trt, {"input": input_optim_data}, [output_var]
+        )
+
+        output_converted = predict_program(
+            program_with_trt, {"input": input_optim_data}, [output_var]
+        )
+
+        output_expected = standardize(output_expected[0])
+        output_trt = standardize(output_converted[0])
+
+        np.testing.assert_allclose(
+            output_expected,
+            output_trt,
+            rtol=1e-3,
+            atol=1e-3,
+            err_msg="Outputs are not within the 1e-3 tolerance",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -491,6 +491,7 @@ class PaddleToTensorRTConverter:
         trt_params.min_shape_tensor = min_value_map
         trt_params.max_shape_tensor = max_value_map
         trt_params.optim_shape_tensor = opt_value_map
+        trt_params.use_cuda_graph = self.trt_config.use_cuda_graph
         group_str = str(group_op)
         engine_name = (
             int(hashlib.sha256(group_str.encode('utf-8')).hexdigest(), 16)
