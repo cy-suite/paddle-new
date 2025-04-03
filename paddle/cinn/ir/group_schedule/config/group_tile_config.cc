@@ -27,7 +27,10 @@ using TileConfigMap =
 namespace {
 
 const int kMaxNumel = BucketInfo::kMaxNumel;
-const int kWarpSize = 32;
+constexpr int kWarpSize = 32;
+constexpr int KMaxWarpSizePerSM = 64;
+constexpr int KMaxBlockSizePerSM = 32;
+constexpr int KMaxRegistersPerSM = 65536;
 
 int64_t CeilPow2(int64_t n) {
   int64_t pow = 1;
@@ -292,8 +295,7 @@ int UpdateWarpNumsInDifferentCase(
   const auto& last_dim = base_info->iter_space_type.back().first;
   if (group_vectorize_info.has_if_else_op && last_dim == "R") {
     warp_nums = Trim(warp_nums, 1, 16);
-  } else if (group_vectorize_info.continuous_arg_nums !=
-                 group_vectorize_info.group_arg_nums &&
+  } else if (!group_vectorize_info.tensor_deal_with_broadcast.empty() &&
              last_dim == "S") {
     warp_nums = Trim(warp_nums, 1, 8);
   } else {
@@ -348,56 +350,68 @@ bool SpatialRegionCanVectorize(
   return false;
 }
 
-bool SpecialSpatialWithBroadcastCaseCanApplyVectorize(
-    const std::shared_ptr<ScheduleConfig::BaseInfo>& base_info,
+int calculateVectorizeTensorRegisterNums(
     const GroupVectorizeInfo& group_vectorize_info,
-    const int grid_dim_x,
-    const int wrap_nums_per_block) {
-  if (wrap_nums_per_block == 32) {
-    if (grid_dim_x <= 512 && group_vectorize_info.continuous_arg_nums <= 2 &&
-        group_vectorize_info.group_arg_nums >= 9) {
-      return false;
-    }
-
-    if (grid_dim_x >= 10240 && group_vectorize_info.continuous_arg_nums <= 2 &&
-        group_vectorize_info.group_arg_nums >= 10) {
-      return false;
-    }
+    const int vectorize_factor) {
+  constexpr int register_bits = 32;
+  int register_sum = 0;
+  for (auto& tensor : group_vectorize_info.tensor_can_vectorize) {
+    auto* tensor_ptr = tensor.As<ir::_Tensor_>();
+    PADDLE_ENFORCE_NOT_NULL(
+        tensor_ptr,
+        ::common::errors::InvalidArgument(
+            "Expected _Tensor_ node in load, but received nullptr."));
+    int data_type_bits = tensor_ptr->type().bits();
+    int vectorize_data_bits = data_type_bits * vectorize_factor;
+    int register_nums = CeilDiv(vectorize_data_bits, register_bits);
+    register_sum += register_nums;
   }
-
-  if (wrap_nums_per_block == 16 && grid_dim_x >= 10240) {
-    if (group_vectorize_info.continuous_arg_nums <= 2 &&
-        group_vectorize_info.group_arg_nums >= 9) {
-      return false;
-    }
-
-    if (group_vectorize_info.continuous_arg_nums <= 4 &&
-        group_vectorize_info.group_arg_nums >= 11) {
-      return false;
-    }
-  }
-
-  return true;
+  return register_sum;
 }
 
-bool SpecialSpatialCaseCanApplyVectorize(
-    const std::shared_ptr<ScheduleConfig::BaseInfo>& base_info,
+int calculateBroadcastTensorRegisterNums(
+    const GroupVectorizeInfo& group_vectorize_info,
+    const int vectorize_factor) {
+  constexpr int register_bits = 32;
+  int register_sum = 0;
+  for (auto& tensor : group_vectorize_info.tensor_deal_with_broadcast) {
+    auto* tensor_ptr = tensor.As<ir::_Tensor_>();
+    PADDLE_ENFORCE_NOT_NULL(
+        tensor_ptr,
+        ::common::errors::InvalidArgument(
+            "Expected _Tensor_ node in load, but received nullptr."));
+    int data_type_bits = tensor_ptr->type().bits();
+    // broadcast tensor will deal with scalar tensor.
+    // after deal with Grid dimension tiling, broadcast tensor is scalar tensor.
+    // only use data type bits register.
+    int vectorize_data_bits = data_type_bits;
+    int register_nums = CeilDiv(vectorize_data_bits, register_bits);
+    register_sum += register_nums;
+  }
+  return register_sum;
+}
+
+bool RegisterNumsLimitedCheckInCTACanApplyVectorize(
     const GroupVectorizeInfo& group_vectorize_info,
     const int vectorize_factor,
     const int warp_nums) {
-  const int64_t iters_dim = base_info->iter_space_type.size();
-  const auto& last_dim = base_info->iter_space_type.back().first;
-  if (iters_dim != 1 || last_dim == "R") return false;
-
-  int64_t spatial_numel = base_info->spatial_numel;
-  int64_t grid_dim_x = spatial_numel / warp_nums / kWarpSize / vectorize_factor;
-
-  if (SpecialSpatialWithBroadcastCaseCanApplyVectorize(
-          base_info, group_vectorize_info, grid_dim_x, warp_nums)) {
-    return true;
+  int thread_register_occupy_sum = 0;
+  thread_register_occupy_sum += calculateVectorizeTensorRegisterNums(
+      group_vectorize_info, vectorize_factor);
+  thread_register_occupy_sum += calculateBroadcastTensorRegisterNums(
+      group_vectorize_info, vectorize_factor);
+  int max_blocks_per_sm =
+      Trim(CeilDiv(KMaxWarpSizePerSM, warp_nums), 1, KMaxBlockSizePerSM);
+  int best_register_nums_per_thread =
+      KMaxRegistersPerSM / max_blocks_per_sm / warp_nums / kWarpSize;
+  VLOG(5) << "calculatet thread register occupy sum is : "
+          << thread_register_occupy_sum
+          << ", best register nums per thread is : "
+          << best_register_nums_per_thread;
+  if (thread_register_occupy_sum > best_register_nums_per_thread) {
+    return false;
   }
-
-  return false;
+  return true;
 }
 
 }  // namespace
@@ -469,11 +483,11 @@ TileConfigMap BuildVectorizeConfig(
   warp_nums =
       UpdateWarpNumsInDifferentCase(base_info, group_vectorize_info, warp_nums);
   // Deal with Special Cases
-  if (can_vectorize) {
-    if (!SpecialSpatialCaseCanApplyVectorize(
-            base_info, group_vectorize_info, vectorize_factor, warp_nums)) {
-      can_vectorize = false;
-    }
+  if (can_vectorize && !RegisterNumsLimitedCheckInCTACanApplyVectorize(
+                           group_vectorize_info, vectorize_factor, warp_nums)) {
+    VLOG(5) << "According to the limit of register, current schedule block "
+               "can't enable vectorize!";
+    can_vectorize = false;
   }
 
   if (!can_vectorize) {

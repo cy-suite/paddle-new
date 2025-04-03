@@ -163,8 +163,8 @@ struct GroupVectorizeInfo {
   bool meet_vectorization_condition{false};
   bool has_if_else_op{false};
   bool has_select_op{false};
-  int continuous_arg_nums{0};
-  int group_arg_nums{0};
+  std::vector<ir::Expr> tensor_can_vectorize;
+  std::vector<ir::Expr> tensor_deal_with_broadcast;
 };
 
 struct FusionGroupInfo {
@@ -185,10 +185,7 @@ struct FusionGroupInfo {
        << "\nreduce_var_name: " << cinn::utils::Join(reduce_var_name, " ")
        << "\ncan_apply_grid_reduce: " << can_apply_grid_reduce
        << "\nmeet_vectorization_condition: "
-       << vectorize_info.meet_vectorization_condition
-       << "\nhas_select_op: " << vectorize_info.has_select_op
-       << "\ncontinuous_arg_nums: " << vectorize_info.continuous_arg_nums
-       << "\ngroup_arg_nums: " << vectorize_info.group_arg_nums;
+       << vectorize_info.meet_vectorization_condition;
     return ss.str();
   }
 };
