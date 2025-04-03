@@ -992,6 +992,26 @@ struct CBlas<phi::dtype::float16> {
     PADDLE_THROW(common::errors::Unimplemented(
         "float16 ASUM not supported on CPU, please check your code"));
   };
+  template <typename... ARGS>
+  static void VADD(int n,
+                   const phi::dtype::float16 *x,
+                   const phi::dtype::float16 *y,
+                   phi::dtype::float16 *z) {
+    for (int i = 0; i < n; ++i) {
+      z[i] = x[i] + y[i];
+    }
+  }
+  template <typename... ARGS>
+  static void AXPY(ARGS... args) {
+    detail::axpy(args...);
+  }
+
+  template <typename... ARGS>
+  static void VCOPY(ARGS... args UNUSED) {
+    PADDLE_THROW(common::errors::Unimplemented(
+        "Blas VCOPY do not supported on CPU with bfloat16,"
+        " please check your code"));
+  }
 #ifdef PADDLE_WITH_MKLML
   static void GEMM_BATCH(...) {
     PADDLE_THROW(common::errors::Unimplemented(
