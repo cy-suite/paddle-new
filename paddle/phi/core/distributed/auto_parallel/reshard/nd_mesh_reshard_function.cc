@@ -148,9 +148,11 @@ void SameNdMeshReshardFunction::Eval(phi::DeviceContext* dev_ctx,
   // 2. change all the shard status to replicated status
   for (int64_t i = first_diff_axis; i >= 0; --i) {
     int64_t in_mesh_axis = out->dist_attr().dims_mapping()[i];
+    int64_t out_mesh_axis = out_dist_attr_orig.dims_mapping()[i];
     if (in_mesh_axis != -1) {
       VLOG(3) << "Step2: in_mesh axis " << in_mesh_axis;
       // 2.1 Calculate the dist_attr after this transform
+      TensorDistAttr backup_dist(out->dist_attr());
       TensorDistAttr real_out_dist_attr(out->dist_attr());
       std::vector<int64_t> real_dims_mapping =
           real_out_dist_attr.dims_mapping();
@@ -172,15 +174,21 @@ void SameNdMeshReshardFunction::Eval(phi::DeviceContext* dev_ctx,
       TensorDistAttr out_one_dim_dist_attr(common::vectorize(in.dims()));
       out_one_dim_dist_attr.set_process_mesh(sub_mesh);
 
+      auto x = out;
+
       // 2.5 Change from shard to replicated
-      SetDistProps(out, in_one_dim_dist_attr);
+      SetDistProps(x, in_one_dim_dist_attr);
       DistTensor tmp_result;
       SToRReshardFunction func;
-      func.Eval(dev_ctx, *out, out_one_dim_dist_attr, &tmp_result);
+      func.Eval(dev_ctx, *x, out_one_dim_dist_attr, &tmp_result);
 
       // 2.6 Reset to the right dist attr
-      SetValue(out, tmp_result.value());
-      SetDistProps(out, real_out_dist_attr);
+      if (in_mesh_axis != out_mesh_axis || out->value().has_allocation() != tmp_result.value().has_allocation()) {
+        SetValue(x, tmp_result.value());
+        SetDistProps(x, real_out_dist_attr);
+      } else {
+        SetDistProps(out, backup_dist);
+      }
     }
   }
 
@@ -223,8 +231,9 @@ void SameNdMeshReshardFunction::Eval(phi::DeviceContext* dev_ctx,
 
   // 4. Change replicated/partial to shard
   for (int64_t i = first_diff_axis; i >= 0; --i) {
+    int64_t in_mesh_axis = out->dist_attr().dims_mapping()[i];
     int64_t out_mesh_axis = out_dist_attr_orig.dims_mapping()[i];
-    if (out_mesh_axis != -1) {
+    if (in_mesh_axis != out_mesh_axis) {
       const auto& in_partial_status = out->dist_attr().partial_status();
       bool is_partial = in_partial_status.count(out_mesh_axis) != 0;
 
