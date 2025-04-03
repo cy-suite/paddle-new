@@ -180,6 +180,7 @@ void RoiAlignGradKernel(const Context& dev_ctx,
   if (x.numel() == 0 || boxes.numel() == 0) {
     dev_ctx.template Alloc<T>(dx);
 
+    // full dx with 0 with boxes is 0 size
     phi::FullKernel<T>(
         dev_ctx, common::vectorize(dx->dims()), 0.0, dx->dtype(), dx);
     return;
@@ -195,11 +196,6 @@ void RoiAlignGradKernel(const Context& dev_ctx,
     return;
   }
 
-  // if (dx->numel() == 0) {
-  //   dev_ctx.template Alloc<T>(dx);
-
-  //   return;
-  // }
   DenseTensor box_batch_id_list;
   box_batch_id_list.Resize({rois_num});
   int* box_batch_size = dev_ctx.template HostAlloc<int>(&box_batch_id_list);
