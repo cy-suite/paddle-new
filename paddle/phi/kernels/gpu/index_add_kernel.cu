@@ -120,13 +120,24 @@ void IndexAddKernel(const Context& ctx,
 
 }  // namespace phi
 
-PD_REGISTER_KERNEL(index_add,
-                   GPU,
-                   ALL_LAYOUT,
-                   phi::IndexAddKernel,
-                   float,
-                   double,
-                   phi::dtype::float16,
-                   phi::dtype::bfloat16,
-                   int,
-                   int64_t) {}
+PD_REGISTER_PLUGIN_KERNEL(index_add,
+                          GPGPU,
+                          ALL_LAYOUT,
+                          phi::IndexAddKernel,
+                          float,
+                          double,
+                          phi::dtype::float16,
+                          phi::dtype::bfloat16,
+                          int,
+                          int64_t) {}
+
+// PD_REGISTER_KERNEL(index_add,
+//                    GPU,
+//                    ALL_LAYOUT,
+//                    phi::IndexAddKernel,
+//                    float,
+//                    double,
+//                    phi::dtype::float16,
+//                    phi::dtype::bfloat16,
+//                    int,
+//                    int64_t) {}

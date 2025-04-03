@@ -27,6 +27,7 @@
 #include "paddle/phi/backends/event.h"
 #include "paddle/phi/backends/stream.h"
 #include "paddle/phi/common/port.h"
+#include "unsupported/Eigen/CXX11/Tensor"
 
 namespace phi {
 class Device final {
@@ -168,6 +169,24 @@ class DeviceManager {
   static size_t GetReallocSize(const Place& place);
 
   static size_t GetExtraPaddingSize(const Place& place);
+
+  static size_t GetComputeCapability(const Place& place);
+
+  static size_t GetRuntimeVersion(const Place& place);
+
+  static size_t GetDriverVersion(const Place& place);
+
+  static size_t GetMultiProcessors(const Place& place);
+
+  static size_t GetMaxThreadsPerMultiProcessor(const Place& place);
+
+  static size_t GetMaxThreadsPerBlock(const Place& place);
+
+  static std::array<unsigned int, 3> GetMaxGridDimSize(const Place& place);
+
+  static Eigen::GpuDevice* InitEigenDevice(const Place& place);
+  
+  static void DestoryEigenDevice(const Place& place, Eigen::GpuDevice* eigen_device);
 
   static void MemoryStats(const Place& place, size_t* total, size_t* free);
 
