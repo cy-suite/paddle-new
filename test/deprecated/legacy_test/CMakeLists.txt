@@ -639,16 +639,6 @@ set_tests_properties(test_uniform_random_op_deprecated PROPERTIES TIMEOUT 60)
 
 set_tests_properties(test_inplace_addto_strategy_deprecated PROPERTIES TIMEOUT
                                                                        120)
-if(WITH_DISTRIBUTE
-   AND WITH_GPU
-   AND WITH_NCCL)
-  set_tests_properties(test_auto_parallel_autoconvert_deprecated
-                       PROPERTIES TIMEOUT 120)
-  set_tests_properties(test_auto_parallel_data_unshard_deprecated
-                       PROPERTIES TIMEOUT 120)
-  set_tests_properties(test_auto_parallel_save_load_deprecated
-                       PROPERTIES TIMEOUT 120)
-endif()
 
 set(TEST_CINN_OPS
     test_slice_op_deprecated test_layer_norm_op_deprecated
