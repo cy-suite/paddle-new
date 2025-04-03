@@ -267,6 +267,10 @@ int64_t GetOpCount(const ::pir::Operation* op) {
   return count;
 }
 
+void ResetCinnPassRelatedSingletonState() {
+  pir::ShapeAnalysisManager::Instance().Clear();
+}
+
 void ApplyCinnPass(
     ::pir::Program* program,
     const std::function<std::shared_ptr<pir::PassManager>()>& CreatePassManager,
@@ -316,6 +320,8 @@ void ApplyCinnPass(
             << ", after lowering it becomes: " << new_num_ops
             << ". (compression ratio: " << new_num_ops << "/" << origin_num_ops
             << " = " << static_cast<float>(new_num_ops) / origin_num_ops << ")";
+
+  ResetCinnPassRelatedSingletonState();
 }
 
 }  // namespace cinn::dialect::ir
