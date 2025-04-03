@@ -721,7 +721,7 @@ std::optional<AxisTransformRoute> GetValidAdjacentLoopTransform(
                            : GetLoopLiftRoute(source, target);
     auto fake_reduce_idx = GetFakeReduceAxisIdx(
         target.loop, reduce_to_trivial_route, target.reduce_axis_num);
-    if (!fake_reduce_idx.empty()) {
+    if (!fake_reduce_idx.empty() && upstream_is_anchor) {
       const auto reduce_dims_product =
           GetShapeProduct(target.loop,
                           target.loop.size() - target.reduce_axis_num,
