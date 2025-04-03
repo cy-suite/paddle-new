@@ -257,7 +257,7 @@ class PaddleToTensorRTConverter:
                             f'{source_id} not found in value_to_trt_tensor'
                         )
 
-            if precision_mode == PrecisionMode.INT8:
+            if precision_mode.value == PrecisionMode.INT8.value:
                 set_dynamic_range(op, operands)
             trt_outs = self.convert(network, op, operands)
 
@@ -385,25 +385,20 @@ class PaddleToTensorRTConverter:
             if group_op.result(out_index).use_empty():
                 # if result value is not used, it doesn't need get shape, continue
                 continue
-            if not is_shape_tensor(result_value):
-                if len(result_value.shape) == 0:
-                    min_shape = []
-                    opt_shape = []
-                    max_shape = []
-                else:
-                    min_shape = get_value_shape_range_info(
-                        result_value, False, paddle.base.core.ShapeMode.kMIN
-                    )
-                    opt_shape = get_value_shape_range_info(
-                        result_value, False, paddle.base.core.ShapeMode.kOPT
-                    )
-                    max_shape = get_value_shape_range_info(
-                        result_value, False, paddle.base.core.ShapeMode.kMAX
-                    )
-            else:
-                min_shape = []
-                opt_shape = []
-                max_shape = []
+            min_shape = []
+            opt_shape = []
+            max_shape = []
+            if len(result_value.shape) != 0:
+                min_shape = get_value_shape_range_info(
+                    result_value, False, paddle.base.core.ShapeMode.kMIN
+                )
+                opt_shape = get_value_shape_range_info(
+                    result_value, False, paddle.base.core.ShapeMode.kOPT
+                )
+                max_shape = get_value_shape_range_info(
+                    result_value, False, paddle.base.core.ShapeMode.kMAX
+                )
+
             min_value = []
             opt_value = []
             max_value = []
@@ -439,7 +434,7 @@ class PaddleToTensorRTConverter:
             trt.MemoryPoolType.WORKSPACE, self.trt_config.workspace_size
         )
 
-        if precision_mode == PrecisionMode.FP16:
+        if precision_mode.value == PrecisionMode.FP16.value:
             if builder.platform_has_fast_fp16:
                 config.set_flag(trt.BuilderFlag.FP16)
                 _logger.info("Run Paddle-TRT FP16 mode")
@@ -447,7 +442,7 @@ class PaddleToTensorRTConverter:
                 _logger.warning(
                     "Hardware does not support FP16. Continuing in FP32 mode."
                 )
-        elif precision_mode == PrecisionMode.BF16:
+        elif precision_mode.value == PrecisionMode.BF16.value:
             if version_list[0] >= 9:
                 if builder.platform_has_fast_bfp16 and hasattr(
                     builder, 'plateform_has_fast_bf16'
@@ -468,7 +463,7 @@ class PaddleToTensorRTConverter:
                     _logger.warning(
                         "Hardware does not support FP16. Continuing in FP32 mode."
                     )
-        elif precision_mode == PrecisionMode.INT8:
+        elif precision_mode.value == PrecisionMode.INT8.value:
             config.set_flag(trt.BuilderFlag.INT8)
             _logger.info("Run Paddle-TRT INT8 mode")
         elif self.trt_config is not None:
@@ -501,7 +496,7 @@ class PaddleToTensorRTConverter:
             int(hashlib.sha256(group_str.encode('utf-8')).hexdigest(), 16)
             % 10**8
         )
-        CACHE_ROOT = get_cache_path()
+        CACHE_ROOT = get_cache_path(self.trt_config.save_model_dir)
         CACHE_FILE = f"{CACHE_ROOT}/engine_{engine_name}_{self.engine_num}.trt"
         with open(CACHE_FILE, "wb") as f:
             f.write(trt_engine)
@@ -591,7 +586,41 @@ class PaddleToTensorRTConverter:
                 if op.results()[0].use_empty():
                     self.program.global_block().remove_op(op)
             if op.name() == "builtin.constant":
+                # builtin.constant can't be saved/loaded, we need del it
                 if op.results()[0].use_empty():
+                    self.program.global_block().remove_op(op)
+                else:
+                    constant_result = op.results()[0]
+                    constant_value_name = op.attrs()["value"]
+                    out_dtype = np.dtype(
+                        paddle.pir.core._PADDLE_PIR_DTYPE_2_NUMPY_DTYPE[
+                            constant_result.dtype
+                        ]
+                    )
+                    tensor_data = self.scope.var(
+                        constant_value_name
+                    ).get_tensor()
+                    constant_array = np.array(
+                        tensor_data, dtype=out_dtype
+                    ).tolist()
+
+                    # convert builtin.constant to pd_op.full_int_array/full and then delete it
+                    with paddle.pir.core.program_guard(self.program):
+                        paddle.base.libpaddle.pir.reset_insertion_point_to_start()
+                        if len(constant_array) == 1:
+                            full_value = paddle._C_ops.full(
+                                [1],
+                                constant_array[0],
+                                constant_result.dtype,
+                                paddle.CUDAPlace(0),
+                            )
+                        else:
+                            full_value = paddle._C_ops.full_int_array(
+                                constant_array,
+                                constant_result.dtype,
+                                paddle.CUDAPlace(0),
+                            )
+                    op.replace_all_uses_with([full_value])
                     self.program.global_block().remove_op(op)
 
         # Call clear_shape_info to clear the previous shape information

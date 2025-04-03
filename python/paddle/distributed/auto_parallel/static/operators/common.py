@@ -511,17 +511,17 @@ def sync_and_scale_gradients(dist_ctx, op, groups, allreduce_var_names):
     dist_op_context = dist_ctx.dist_op_context
     main_block = dist_op_context.work_block
 
-    reduce_type = paddle.distributed.ReduceOp.SUM
+    op_type = dist.ReduceOp.SUM
     need_scale = dist_ctx.gradient_scale
     scale_using_allreduce_avg = dist_ctx.gradient_scale_using_allreduce_avg
 
-    # With nccl_version > 2.10.00, we can use c_allreduce_avg to replace c_allreduce_sum and eliminate the scale op.
+    # With nccl_version > 2.10.00, we can use all_reduce_avg to replace all_reduce_sum and eliminate the scale op.
     if (
         need_scale
         and scale_using_allreduce_avg
         and int(paddle.version.nccl()) > 21000
     ):
-        reduce_type = paddle.distributed.ReduceOp.AVG
+        op_type = dist.ReduceOp.AVG
         need_scale = False
 
     for group in groups:
@@ -536,8 +536,8 @@ def sync_and_scale_gradients(dist_ctx, op, groups, allreduce_var_names):
                 outputs={'out': [grad_var]},
                 attrs={
                     'ring_id': group.id,
+                    'op_type': op_type,
                     OP_ROLE_KEY: OpRole.Backward,
-                    'reduce_type': int(reduce_type),
                 },
             )
             allreduce_op._set_attr(
@@ -670,10 +670,6 @@ def is_data_parallel_scale_op(op):
 
 
 def is_data_parallel_reduce_op(op):
-    is_allreduce_op = op.type in [
-        "c_allreduce_sum",
-        "c_allreduce_avg",
-    ]
     is_all_reduce_op = op.type == "all_reduce" and op.desc.attr(
         "reduce_type"
     ) in [
@@ -685,7 +681,7 @@ def is_data_parallel_reduce_op(op):
         dist.ReduceOp.AVG,
     ]
     return (
-        (is_allreduce_op or is_all_reduce_op or is_reduce_op)
+        (is_all_reduce_op or is_reduce_op)
         and op.desc.has_attr("op_namescope")
         and ParallelMode.DataParallel in op.desc.attr("op_namescope")
     )
@@ -701,7 +697,8 @@ def is_amp_flag_sync_op(op):
 
 def is_global_norm_sync_op(op):
     return (
-        op.type == "c_allreduce_sum"
+        op.type == "all_reduce"
+        and op.desc.attr("op_type") == dist.ReduceOp.SUM
         and op.desc.has_attr("op_namescope")
         and SyncMode.GlobalNormSync in op.desc.attr("op_namescope")
     )

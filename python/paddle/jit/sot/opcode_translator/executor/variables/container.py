@@ -412,38 +412,6 @@ class ListVariable(ContainerVariable):
 
         return ConstantVariable(-1, self.graph, DummyTracker([self, value]))
 
-    def max(self):
-        if len(self) == 0:
-            raise ValueError("max() arg is an empty sequence")
-        res = self[0]
-        getitem = BuiltinVariable(
-            operator.getitem, self.graph, DanglingTracker()
-        )
-        for index in range(len(self)):
-            index_value = getitem(self, index)
-            gt = BuiltinVariable(operator.gt, self.graph, DanglingTracker())(
-                index_value, res
-            )
-            if gt.get_py_value() is True:
-                res = index_value
-        return res
-
-    def min(self):
-        if len(self) == 0:
-            raise ValueError("min() arg is an empty sequence")
-        res = self[0]
-        getitem = BuiltinVariable(
-            operator.getitem, self.graph, DanglingTracker()
-        )
-        for index in range(len(self)):
-            index_value = getitem(self, index)
-            lt = BuiltinVariable(operator.lt, self.graph, DanglingTracker())(
-                index_value, res
-            )
-            if lt.get_py_value() is True:
-                res = index_value
-        return res
-
     def getattr(self, name: str, default=None):
         from .callable import BuiltinVariable
 
@@ -470,7 +438,7 @@ class ListVariable(ContainerVariable):
             builtin_fn = method_name_to_builtin_fn[name]
             return BuiltinVariable(
                 builtin_fn, self.graph, DanglingTracker()
-            ).bind(self, name)
+            ).bind_dangling_fn(self, name)
         else:
             raise FallbackError(f"attribute {name} for list is not implemented")
 
@@ -523,7 +491,7 @@ class TupleVariable(ContainerVariable):
             builtin_fn = method_name_to_builtin_fn[name]
             return BuiltinVariable(
                 builtin_fn, self.graph, DanglingTracker()
-            ).bind(self, name)
+            ).bind_dangling_fn(self, name)
         else:
             raise FallbackError(
                 f"attribute {name} for tuple is not implemented"
@@ -760,8 +728,9 @@ class RangeVariable(ContainerVariable):
     def make_stringified_guard(self) -> list[StringifiedExpression]:
         frame_value_tracer = self.tracker.trace_value_from_frame()
         return [
-            StringifiedExpression(
+            FasterStringifiedExpression(
                 "isinstance({0}, range)",
+                paddle.framework.core.InstanceCheckGuard(range),
                 [frame_value_tracer],
                 frame_value_tracer.free_vars,
             ),
@@ -1044,7 +1013,7 @@ class DictVariable(ContainerVariable):
             builtin_fn = method_name_to_builtin_fn[name]
             return BuiltinVariable(
                 builtin_fn, self.graph, DanglingTracker()
-            ).bind(self, name)
+            ).bind_dangling_fn(self, name)
         else:
             raise FallbackError(f"attribute {name} for dict is not implemented")
 

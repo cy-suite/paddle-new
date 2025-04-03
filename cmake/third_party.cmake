@@ -470,6 +470,11 @@ if(WITH_TESTING OR WITH_DISTRIBUTE)
   list(APPEND third_party_deps extern_gtest)
 endif()
 
+if(WITH_FLAGCX)
+  include(external/flagcx)
+  list(APPEND third_party_deps flagcx)
+endif()
+
 if(WITH_ONNXRUNTIME)
   include(external/onnxruntime
   )# download, build, install onnxruntime、paddle2onnx
@@ -691,6 +696,17 @@ endif()
 if(WITH_OPENVINO)
   include(external/openvino)
   list(APPEND third_party_deps extern_openvino)
+endif()
+
+string(FIND "${CUDA_ARCH_BIN}" "90" ARCH_BIN_CONTAINS_90)
+if(NOT WITH_GPU
+   OR NOT WITH_DISTRIBUTE
+   OR (ARCH_BIN_CONTAINS_90 EQUAL -1))
+  set(WITH_NVSHMEM OFF)
+endif()
+if(WITH_NVSHMEM)
+  include(external/nvshmem)
+  list(APPEND third_party_deps extern_nvshmem)
 endif()
 
 add_custom_target(third_party ALL DEPENDS ${third_party_deps})
