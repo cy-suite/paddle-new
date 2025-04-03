@@ -39,13 +39,38 @@ IR_API PriorityComparisonStatus CompareDimExprPriority(const DimExpr& lhs,
 
 enum class DimExprCompareResult {
   GT,       // lhs is greater than rhs
+  GE,       // lhs is greater than or equal to rhs
   EQ,       // lhs and rhs is equal
   LT,       // lhs is less than rhs
+  LE,       // lhs is less than or equal to rhs
   UNKNOWN,  // lhs and rhs is not comparable
 };
 IR_API DimExprCompareResult Compare(const DimExpr& lhs, const DimExpr& rhs);
 
+IR_API DimExprCompareResult CompareLhsWithRhsForGtOrGe(
+    const DimExpr& lhs, const DimExpr& rhs, bool is_broadcast = false);
+
 IR_API std::unordered_set<std::string> CollectDimExprSymbols(
     const DimExpr& dim_expr);
+
+class CacheMaxOrMin {
+ public:
+  static CacheMaxOrMin& Instance();
+  CacheMaxOrMin(const CacheMaxOrMin&) = delete;
+  CacheMaxOrMin(CacheMaxOrMin&&) = delete;
+  CacheMaxOrMin& operator=(const CacheMaxOrMin&) = delete;
+
+  void AddCacheItem(const DimExpr& expr) {
+    if (cache_set_.count(expr) == 0) {
+      cache_set_.insert(expr);
+    }
+  }
+
+  bool IsCached(const DimExpr& expr) { return cache_set_.count(expr) > 0; }
+
+ private:
+  std::unordered_set<DimExpr> cache_set_;
+  CacheMaxOrMin() {}
+};
 
 }  // namespace symbol
