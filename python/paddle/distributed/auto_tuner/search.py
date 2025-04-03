@@ -14,7 +14,6 @@
 
 
 import logging
-import os
 from abc import ABC, abstractmethod
 
 from .prune import _PRUNE_HISTORY_FUNC
@@ -56,6 +55,7 @@ class GridSearch(SearchAlgo):
             from .utils import memory_sort
 
             self.all_tasks.sort(key=memory_sort)
+
         self.previous_cfg = None
 
     def search_once(self, history_cfgs):
@@ -114,7 +114,9 @@ class DpEstimationSearch(SearchAlgo):
             if self.idx < len(self.all_tasks):
                 new_cfg = self.all_tasks[self.idx]
                 self.idx += 1
-                stop = not self.prune(self.tuner_cfg, new_cfg, history_cfgs)
+                stop = not self.prune(
+                    self.tuner_cfg, new_cfg, history_cfgs, self.pruned_cfgs
+                )
             else:
                 return None
         return new_cfg
@@ -135,7 +137,9 @@ class GBSSearch(SearchAlgo):
                 self.idx += 1
                 glb = new_cfg.get("global_batch_size", None)
                 self.tuner_cfg["model_cfg"]["global_batch_size"] = glb
-                stop = not self.prune(self.tuner_cfg, new_cfg, history_cfgs)
+                stop = not self.prune(
+                    self.tuner_cfg, new_cfg, history_cfgs, self.pruned_cfgs
+                )
             else:
                 return None
         return new_cfg
@@ -145,11 +149,7 @@ class CustomizeSearch(SearchAlgo):
     def __init__(self, tuner_cfg):
         super().__init__(tuner_cfg)
         self.idx = 0
-        self.configs_csv = tuner_cfg.get("configs_csv", None)
-        assert os.path.exists(
-            self.configs_csv
-        ), "configs_csv file is necessary in CustomizeSearch mode."
-        self.all_tasks = load_configs_from_csv(self.configs_csv)
+        self.all_tasks = load_configs_from_csv(tuner_cfg)
 
     def search_once(self, history_cfgs):
         new_cfg = self.all_tasks[self.idx]

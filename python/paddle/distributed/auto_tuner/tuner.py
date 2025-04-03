@@ -32,7 +32,6 @@ class AutoTuner:
         self.task_limit = tuner_cfg.get("task_limit", 100)
 
         search_algo = tuner_cfg.get("search_algo", {"name": "grid"})["name"]
-
         if search_algo == "grid":
             from .search import GridSearch
 

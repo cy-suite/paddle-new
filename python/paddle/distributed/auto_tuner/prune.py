@@ -248,19 +248,10 @@ def prune_by_vpp(tuner_cfg, cur_cfg, history_cfgs=[]):
         return False
 
     if num_layers:
-        global_batch_size = (
-            cur_cfg["global_batch_size"]
-            if "global_batch_size" in cur_cfg
-            else tuner_cfg["model_cfg"].get("global_batch_size", None)
-        )
-        acc_steps = (
-            global_batch_size
-            // cur_cfg["dp_degree"]
-            // cur_cfg["sharding_degree"]
-            // cur_cfg["micro_batch_size"]
-        )
-        if vpp_degree > 1 and acc_steps % pp_degree != 0:
-            return True
+        acc_steps = cur_cfg.get("acc_steps", 1)
+        if tuner_cfg.get("enable_pp_divide_acc_steps_prune", False):
+            if vpp_degree > 1 and acc_steps % pp_degree != 0:
+                return True
         if num_layers % (pp_degree * vpp_degree) != 0:
             return True
         if pp_degree == 1 and vpp_degree != 1:
@@ -312,21 +303,16 @@ def prune_by_mbs(tuner_cfg, cur_cfg, history_cfgs=[]):
     3. Prune if a similar configuration with a larger micro batch size resulted in a valid run.
     """
     micro_batch_size = cur_cfg.get("micro_batch_size", None)
-    global_batch_size = (
-        cur_cfg["global_batch_size"]
-        if "global_batch_size" in cur_cfg
-        else tuner_cfg["model_cfg"].get("global_batch_size", None)
+
+    assert (
+        "global_batch_size" in cur_cfg
+    ), "The global_batch_size must be provided in cur_cfg！"
+    global_batch_size = cur_cfg["global_batch_size"]
+    local_batch_size = (
+        global_batch_size // cur_cfg["dp_degree"] // cur_cfg["sharding_degree"]
     )
-    if global_batch_size == "auto":
-        global_batch_size = cur_cfg["global_batch_size"]
-    if global_batch_size:
-        local_batch_size = (
-            global_batch_size
-            // cur_cfg["dp_degree"]
-            // cur_cfg["sharding_degree"]
-        )
-        if local_batch_size == 0:
-            return True
+    if local_batch_size == 0:
+        return True
 
     mbs_candidates = tuner_cfg.get("micro_batch_size", None)
 
@@ -344,11 +330,12 @@ def prune_by_mbs(tuner_cfg, cur_cfg, history_cfgs=[]):
         if pp_degree is not None:
             if acc_steps < pp_degree:
                 return True
-        vpp_degree = cur_cfg.get("vpp_degree", None)
-        if vpp_degree is not None and vpp_degree > 1:
-            if pp_degree is not None:
-                if acc_steps % pp_degree != 0:
-                    return True
+        if tuner_cfg.get("enable_pp_divide_acc_steps_prune", False):
+            vpp_degree = cur_cfg.get("vpp_degree", None)
+            if vpp_degree is not None and vpp_degree > 1:
+                if pp_degree is not None:
+                    if acc_steps % pp_degree != 0:
+                        return True
 
     if mbs_candidates:
         if micro_batch_size not in mbs_candidates:
@@ -835,7 +822,7 @@ def prune_by_refined_recompute(tuner_cfg, cur_cfg, history_cfgs=[]):
             return True
         if tuner_cfg["model_cfg"]["num_layers"] % pp_degree != 0:
             return True
-        max_value = tuner_cfg["model_cfg"]["num_layers"] / pp_degree
+        max_value = cur_cfg["vpp_degree"]
         if cur_cfg[rr[0]] > max_value:
             return True
         i = 1
@@ -929,6 +916,127 @@ def prune_by_custom_search_dim_history(
                     pruned_reason = f"{key}{cfg_value} may be slower because {key}{cur_value} has been already runnable."
                     log_pruned_info(cur_cfg, pruned_reason, tuner_cfg)
                     cur_cfg["time"] = cfg["time"]
+                    return True
+
+    return False
+
+
+@register_prune
+def prune_by_acc_steps(tuner_cfg, cur_cfg, pruned_cfgs=[]):
+    vpp_degree = cur_cfg["vpp_degree"]
+    pp_degree = cur_cfg["pp_degree"]
+    # Only supports cases where the pp degree is greater than 1.
+    if pp_degree <= 1:
+        return False
+
+    global_batch_sizes = tuner_cfg["model_cfg"]["global_batch_size"]
+    dp_degree = cur_cfg["dp_degree"]
+    sharding_degree = cur_cfg["sharding_degree"]
+    micro_batch_size = cur_cfg["micro_batch_size"]
+    pp_degree = cur_cfg["pp_degree"]
+    acc_steps = cur_cfg["acc_steps"]
+
+    # Calculate all valid acc_steps based on the current micro_batch_size.
+    candidates_acc_steps = []
+    for gbs in global_batch_sizes:
+        if gbs % (dp_degree * sharding_degree) != 0:
+            continue
+        local_batch_size = gbs // (dp_degree * sharding_degree)
+        if local_batch_size % micro_batch_size != 0:
+            continue
+        candidates_acc_steps.append(local_batch_size // micro_batch_size)
+
+    # Handld the case of 1F1B
+    if vpp_degree == 1:
+        if acc_steps < max(candidates_acc_steps):
+            return True
+    # Handld the case of interleave mode
+    else:
+        max_divisible = max(
+            (astp for astp in candidates_acc_steps if astp % pp_degree == 0),
+            default=0,
+        )
+        max_remainder = max(
+            (
+                astp
+                for astp in candidates_acc_steps
+                if astp % pp_degree == acc_steps % pp_degree
+            ),
+            default=0,
+        )
+        return acc_steps < max(max_divisible, max_remainder)
+
+
+@register_prune_history
+def prune_by_acc_steps_history(
+    tuner_cfg, cur_cfg, history_cfgs=[], pruned_cfgs=[]
+):
+    vpp_degree = cur_cfg["vpp_degree"]
+    pp_degree = cur_cfg["pp_degree"]
+    # Only supports cases where the vpp degree is greater than 1.
+    if pp_degree <= 1 or vpp_degree <= 1:
+        return False
+
+    pp_degree = cur_cfg["pp_degree"]
+    acc_steps = cur_cfg["acc_steps"]
+
+    if acc_steps % pp_degree == 0:
+        return False
+
+    history_cfgs = copy.deepcopy(history_cfgs)
+    history_cfgs.extend(pruned_cfgs)
+    global_batch_sizes = tuner_cfg["model_cfg"]["global_batch_size"]
+    dp_degree = cur_cfg["dp_degree"]
+    sharding_degree = cur_cfg["sharding_degree"]
+    micro_batch_size = cur_cfg["micro_batch_size"]
+    pp_degree = cur_cfg["pp_degree"]
+    acc_steps = cur_cfg["acc_steps"]
+    cur_step_remainder = cur_cfg["acc_steps"] % pp_degree
+
+    if (
+        tuner_cfg.get("refined_recompute", None)
+        and tuner_cfg.get("recompute_granularity", None) == "full"
+    ):
+        cur_refined_recompute_conf = tuple(
+            cur_cfg[key] for key in tuner_cfg["refined_recompute"]
+        )
+        rr = tuner_cfg.get("refined_recompute")
+        compare = copy.deepcopy(rr)
+        compare.append("acc_steps")
+        cfgs = same_cfgs_beside(compare, cur_cfg, history_cfgs)
+        if cfgs:
+            for cfg in cfgs:
+                step_remainder = cfg["acc_steps"] % pp_degree
+                refined_recompute_conf = tuple(
+                    cfg[key] for key in tuner_cfg["refined_recompute"]
+                )
+                if (
+                    step_remainder <= cur_step_remainder
+                    and refined_recompute_conf <= cur_refined_recompute_conf
+                ) and cfg.get("max_mem_usage") == "OOM":
+                    pruned_reason = (
+                        f"acc_steps {cur_cfg['acc_steps']}, "
+                        + ", ".join(f"{key}={cur_cfg[key]}" for key in rr)
+                        + f" may cause OOM because config (acc_steps {cfg['acc_steps']}, "
+                        + ", ".join(f"{key}={cfg[key]}" for key in rr)
+                        + ") already OOM."
+                    )
+
+                    log_pruned_info(cur_cfg, pruned_reason, tuner_cfg)
+                    cur_cfg["max_mem_usage"] = "OOM"
+                    return True
+    else:
+        cfgs = same_cfgs_beside(["acc_steps"], cur_cfg, history_cfgs)
+        if cfgs:
+            for cfg in cfgs:
+                step_remainder = cfg["acc_steps"] % pp_degree
+                if (
+                    step_remainder <= cur_step_remainder
+                    and cfg.get("max_mem_usage") == "OOM"
+                ):
+                    pruned_reason = f"acc_steps {cur_cfg['acc_steps']} may cause oom because {cfg['acc_steps']} already oom."
+                    log_pruned_info(cur_cfg, pruned_reason, tuner_cfg)
+                    cur_cfg["max_mem_usage"] = "OOM"
                     return True
 
     return False

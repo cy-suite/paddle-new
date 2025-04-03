@@ -25,6 +25,13 @@ import paddle
 from .prune import _PRUNE_FUNC
 
 __SUPPORTED_RECOMPUTE_GRANULARITY__ = ["full", "full_attn", "core_attn"]
+__REFINED_RECOMPUTE_OPS__ = [
+    'mlp_row_ln',
+    'flash_attn',
+    'attention_row_ln',
+    'attention_column_ln',
+    'mlp_column_ln',
+]
 
 logger = logging.getLogger('auto_tuner')
 
@@ -137,14 +144,14 @@ def dist_degree(mode, num_gpus, num_nodes, tuner_cfg=None):
         results = divisor(num_gpus, reverse=True)
 
     elif mode == "micro_batch_size":
+        results = set()
+        for gbs in tuner_cfg["model_cfg"]["global_batch_size"]:
+            results = results.union(divisor(gbs, reverse=False))
+        results = list(results)
         if tuner_cfg.get("schedule_mode", "memory") != "performance":
-            results = divisor(
-                tuner_cfg["model_cfg"]["global_batch_size"], reverse=False
-            )
+            results = sorted(results, reverse=False)
         else:
-            results = divisor(
-                tuner_cfg["model_cfg"]["global_batch_size"], reverse=True
-            )
+            results = sorted(results, reverse=True)
 
     elif mode == "vpp_degree":
         if tuner_cfg.get("schedule_mode", "memory") != "performance":
@@ -184,6 +191,7 @@ def default_candidates(tuner_cfg):
         strategy_customized_range = _param2range(
             tuner_cfg.get(strategy, None), num_gpus, strategy
         )
+
         candidates[strategy] = dist_degree_with_customized_range(
             strategy, num_gpus, num_nodes, strategy_customized_range, tuner_cfg
         )
@@ -193,6 +201,7 @@ def default_candidates(tuner_cfg):
         tuner_cfg["model_cfg"]["num_layers"],
         "vpp_degree",
     )
+
     candidates["vpp_degree"] = dist_degree_with_customized_range(
         "vpp_degree",
         num_gpus,
@@ -203,9 +212,10 @@ def default_candidates(tuner_cfg):
 
     mbs_customized_range = _param2range(
         tuner_cfg.get("micro_batch_size", None),
-        tuner_cfg["model_cfg"]["global_batch_size"],
+        max(tuner_cfg["model_cfg"]["global_batch_size"]),
         "micro_batch_size",
     )
+
     candidates["micro_batch_size"] = dist_degree_with_customized_range(
         "micro_batch_size", num_gpus, num_nodes, mbs_customized_range, tuner_cfg
     )
@@ -325,6 +335,7 @@ def search_all(tuner_cfg):
         or "estimated_num_gpus" not in tuner_cfg["search_algo"]
         else tuner_cfg["search_algo"]["estimated_num_gpus"]
     )
+
     valid_degrees = []
 
     for mp_degree in mp_degree_candidates:
@@ -379,6 +390,12 @@ def search_all(tuner_cfg):
 
     all_cfgs = []
     refined_recompute = tuner_cfg.get("refined_recompute", None)
+
+    if refined_recompute:
+        refined_recompute = sorted(
+            refined_recompute, key=__REFINED_RECOMPUTE_OPS__.index
+        )
+
     for valid_degree in valid_degrees:
         for other_dim_cfg in other_dim_cfgs:
             mp_degree, sharding_degree, pp_degree, dp_degree = valid_degree
@@ -389,11 +406,12 @@ def search_all(tuner_cfg):
                 use_recompute,
                 recompute_granularity,
             ) = list(other_dim_cfg[:5])
-            if (
-                tuner_cfg["model_cfg"]["global_batch_size"]
-                % (mbs * sharding_degree * dp_degree)
-                != 0
-            ):
+
+            split_valid_flag = False
+            for gbs in tuner_cfg["model_cfg"]["global_batch_size"]:
+                if gbs % (mbs * sharding_degree * dp_degree) == 0:
+                    split_valid_flag = True
+            if not split_valid_flag:
                 continue
             if tuner_cfg["model_cfg"]["num_layers"] % (pp_degree * vpp) != 0:
                 continue
@@ -413,9 +431,7 @@ def search_all(tuner_cfg):
                     if cfg not in all_cfgs:
                         all_cfgs.append(cfg)
                 else:
-                    max_value = (
-                        tuner_cfg["model_cfg"]["num_layers"] // pp_degree
-                    )
+                    max_value = vpp
                     rr_valid_values = list(range(0, max_value + 1))
                     # The previous operator has reached its maximum value, and the current operator can only be turned on
                     op_count = len(refined_recompute)
@@ -487,10 +503,26 @@ def search_all(tuner_cfg):
         for idx, val in enumerate(cfg):
             new_cfg[mapping[idx]] = val
         new_all_cfgs.append(new_cfg)
-    search_space_size_before_prune = len(new_all_cfgs)
+
+    all_cfgs_with_acc_steps = []
+    for cfg in new_all_cfgs:
+        sharding_degree = cfg["sharding_degree"]
+        dp_degree = cfg["dp_degree"]
+        micro_batch_size = cfg["micro_batch_size"]
+        for gbs in tuner_cfg["model_cfg"]["global_batch_size"]:
+            cfg_copied = copy.deepcopy(cfg)
+            if gbs % (sharding_degree * dp_degree) == 0:
+                local_batch_size = gbs // (sharding_degree * dp_degree)
+                if local_batch_size % micro_batch_size == 0:
+                    acc_steps = local_batch_size // micro_batch_size
+                    cfg_copied["acc_steps"] = acc_steps
+                    cfg_copied["global_batch_size"] = gbs
+                    all_cfgs_with_acc_steps.append(cfg_copied)
+
+    search_space_size_before_prune = len(all_cfgs_with_acc_steps)
     pruned_all_cfgs = []
     tuner_cfg["num_gpus"] = num_gpus
-    for cur_cfg in new_all_cfgs:
+    for cur_cfg in all_cfgs_with_acc_steps:
         pruned = False
         for func in _PRUNE_FUNC:
             result = func(tuner_cfg, cur_cfg, pruned_all_cfgs)
@@ -503,9 +535,56 @@ def search_all(tuner_cfg):
     logger.info(
         f"{search_space_size_before_prune - search_space_size_after_prune} tasks are pruned before launching."
     )
+
     if tuner_cfg.get("schedule_prior", False):
         pruned_all_cfgs = sort_by_special(pruned_all_cfgs, tuner_cfg)
+    if refined_recompute is not None:
+        pruned_all_cfgs = sort_by_refined_recompute(pruned_all_cfgs)
     return pruned_all_cfgs
+
+
+def sort_by_refined_recompute(all_cfgs):
+    def group_by_excluding_keys(dict_list, excluding_keys):
+        grouped = {}
+        for d in dict_list:
+            key = tuple(d.get(k, 0) for k in d if k not in excluding_keys)
+            if key not in grouped:
+                grouped[key] = []
+            grouped[key].append(d)
+        return grouped
+
+    from collections import deque
+
+    def bst_level_order(cfg_list):
+        if cfg_list == []:
+            return []
+        queue = deque([(0, len(cfg_list) - 1)])
+        level_order = []
+        while queue:
+            start, end = queue.popleft()
+            mid = (start + end) // 2
+            level_order.append(cfg_list[mid])
+            if start <= mid - 1:
+                queue.append((start, mid - 1))
+            if mid + 1 <= end:
+                queue.append((mid + 1, end))
+        return level_order
+
+    grouped = group_by_excluding_keys(all_cfgs, __REFINED_RECOMPUTE_OPS__)
+
+    sorted_cfgs = []
+    for key, cfg_list in grouped.items():
+        cfg_list = sorted(
+            cfg_list,
+            key=lambda d: tuple(
+                d.get(k, 0) for k in d if k in __REFINED_RECOMPUTE_OPS__
+            ),
+        )
+        if len(cfg_list) < 6:
+            sorted_cfgs.extend(cfg_list)
+            continue
+        sorted_cfgs.extend(bst_level_order(cfg_list))
+    return sorted_cfgs
 
 
 def sort_by_special(cfgs, tuner_cfg):
@@ -693,9 +772,9 @@ def search_by_dp_estimation(tuner_cfg):
                     break
         assert actual_cards % nnodes == 0
         task["nodes"] = nnodes
+        global_batch_size = task["global_batch_size"]
         task["global_batch_size"] = (
-            tuner_cfg["model_cfg"]["global_batch_size"]
-            // task["estimated_dp_degree"]
+            global_batch_size // task["estimated_dp_degree"]
         )
         if task not in new_all_cfgs and task["nodes"] <= tuner_cfg["nodes"]:
             new_all_cfgs.append(task)
@@ -984,49 +1063,26 @@ def gen_new_args(raw_args, cfg, tuner_cfg, run_best=False):
     cfg = copy.deepcopy(cfg)
 
     def _get_new_cfg(arg, cmg, cfg, tuner_cfg):
+        assert (
+            "global_batch_size" in cfg
+        ), "Missing required configuration key 'global_batch_size'!"
         if arg == "local_batch_size" and arg in cmd:
-            global_batch_size = (
-                cfg["global_batch_size"]
-                if "global_batch_size" in cfg
-                else tuner_cfg["model_cfg"]["global_batch_size"]
-            )
+            global_batch_size = cfg["global_batch_size"]
             local_batch_size = (
                 global_batch_size // cfg["sharding_degree"] // cfg["dp_degree"]
             )
             cfg["local_batch_size"] = local_batch_size
 
         if arg == "gradient_accumulation_steps" and arg in cmd:
-            try:
-                global_batch_size = (
-                    cfg["global_batch_size"]
-                    if "global_batch_size" in cfg
-                    else tuner_cfg["model_cfg"]["global_batch_size"]
-                )
-                gradient_accumulation_steps = (
-                    global_batch_size
-                    // cfg["sharding_degree"]
-                    // cfg["dp_degree"]
-                    // cfg["micro_batch_size"]
-                )
-                cfg["gradient_accumulation_steps"] = gradient_accumulation_steps
-            except:
-                return
+            assert (
+                "acc_steps" in cfg
+            ), "Missing required configuration key 'acc_steps'!"
+            cfg["gradient_accumulation_steps"] = cfg["acc_steps"]
 
         if arg == "sequence_parallel" and arg in cmd:
             try:
                 sequence_parallel = 1 if cfg["mp_degree"] > 1 else 0
                 cfg["sequence_parallel"] = sequence_parallel
-            except:
-                return
-
-        if arg == "global_batch_size" and arg in cmd:
-            try:
-                global_batch_size = (
-                    cfg["global_batch_size"]
-                    if "global_batch_size" in cfg
-                    else tuner_cfg["model_cfg"]["global_batch_size"]
-                )
-                cfg["global_batch_size"] = global_batch_size
             except:
                 return
 
@@ -1123,9 +1179,15 @@ def gen_new_args(raw_args, cfg, tuner_cfg, run_best=False):
 
         elif arg == "refined_recompute" and arg in cmd:
             if "--" in cmd["refined_recompute"][0]:
-                raise NotImplementedError(
-                    "refined recompute is not supported by command in autotuner."
-                )
+                refined_recompute_config = ""
+                for op in __REFINED_RECOMPUTE_OPS__:
+                    if op in cfg:
+                        refined_recompute_config += (
+                            op + ':' + str(cfg.get(op, 0))
+                        ) + ','
+                refined_recompute_config = refined_recompute_config[:-1]
+                cmd["refined_recompute"][1] = refined_recompute_config
+                res_args.extend(cmd[arg])
             elif "-o" in cmd["refined_recompute"][0]:
                 raise NotImplementedError(
                     "refined recompute is not supported by '-o' in autotuner."
@@ -1539,13 +1601,11 @@ def read_allocated_memory_log(
             return metric_list[-1]
 
 
-def read_memory_log(path, file) -> tuple[float, bool]:
+def read_memory_log(path, file) -> tuple[list, bool]:
     log_path = os.path.join(path, file)
     if not os.path.exists(log_path):
-        return (0.0, True)
-    memory_used = []
-    utilization_gpu = []
-    indices = []
+        return ([0], True)
+    memory_used = {}
 
     with open(log_path, 'r') as f:
         reader = csv.reader(f)
@@ -1560,11 +1620,39 @@ def read_memory_log(path, file) -> tuple[float, bool]:
             # If row length is 6 then it's a utilization data row
             # skip header
             if len(row) == 6:
-                index, util_gpu, _, mem_used, _, _ = row
-                indices.append(int(index))
-                memory_used.append(int(mem_used))
-                utilization_gpu.append(int(util_gpu))
-    return max(memory_used), False
+                index, _, _, mem_used, _, _ = row
+                index = int(index)
+                if index not in memory_used:
+                    memory_used[index] = int(mem_used)
+                memory_used[index] = max(int(mem_used), memory_used[index])
+
+    mem_used_per_gpu = [
+        memory_used.get(i, 0) for i in range(max(memory_used.keys()) + 1)
+    ]
+    return mem_used_per_gpu, False
+
+
+def read_trainable_parameters_log(path, file) -> int:
+    log_path = os.path.join(path, file)
+    if not os.path.exists(log_path):
+        return 0
+    with open(log_path, 'r') as f:
+        re_model_parameter_pattern = (
+            r"Number of trainable parameters\s*=\s*([\d,]+).*\(per device"
+        )
+        lines = f.readlines()
+        model_param = set()
+        for line in lines:
+            result = re.findall(re_model_parameter_pattern, line)
+            if result:
+                for item in result:
+                    value = int(item.replace(",", ""))
+                    model_param.add(value)
+        assert len(model_param) <= 1
+    # At this point, the Task has not been successfully started, and the training parameters have not been printed in the log.
+    if len(model_param) == 0:
+        return 0
+    return model_param.pop()
 
 
 def read_completed(path):
@@ -1599,15 +1687,16 @@ def read_log(
     metric_file="workerlog.0",
     target_metric='step/s',
     memory_file="0.gpu.log",
-) -> tuple[float, float, int]:
+) -> tuple[float, list, list, int]:
     """
-    extract metric and max memory usage from log file
+    extract metric and max memory usage and trainable params number from log file
     return:
         metric: average metric of last 10 steps
-        memory: max memory used
+        memory:  memory used per gpu
         err_code: 00: no error, 01: no metric, 10: out of memory, 100: no memory log
     """
     err_code = 0
+    param_per_gpu = {}
     # check out of memory
     for root, dirs, files in os.walk(path):
         for file in files:
@@ -1617,6 +1706,12 @@ def read_log(
             if metric_flag:
                 err_code = (metric_flag & 2) | err_code
 
+            rank_num = int(file.split(".")[1])
+            param_per_gpu[rank_num] = read_trainable_parameters_log(path, file)
+            trainable_params = [
+                param_per_gpu.get(i, 0)
+                for i in range(max(param_per_gpu.keys()) + 1)
+            ]
     # read metric
     res_metric, metric_flag = read_metric_log(path, metric_file, target_metric)
     err_code = metric_flag | err_code
@@ -1625,9 +1720,9 @@ def read_log(
         res_memory, memory_flag = read_memory_log(path, memory_file)
         err_code = (memory_flag << 2) | err_code
     except:
-        res_memory = 0.0
+        res_memory = [0.0]
         err_code = (1 << 2) | err_code
-    return res_metric, res_memory, err_code
+    return res_metric, res_memory, trainable_params, err_code
 
 
 def get_error_info(filename):
@@ -1777,12 +1872,31 @@ def gbs_search_all(tuner_cfg):
             * new_cfg["dp_degree"]
             * new_cfg["micro_batch_size"]
         )
+
+        if (
+            new_cfg["global_batch_size"]
+            % (new_cfg["sharding_degree"] * new_cfg["dp_degree"])
+            != 0
+        ):
+            continue
+        local_batch_size = new_cfg["global_batch_size"] // (
+            new_cfg["sharding_degree"] * new_cfg["dp_degree"]
+        )
+        if local_batch_size % new_cfg["micro_batch_size"] != 0:
+            continue
+
+        new_cfg["acc_steps"] = local_batch_size // new_cfg["micro_batch_size"]
         new_all_cfgs.append(new_cfg)
+
     return new_all_cfgs
 
 
-def load_configs_from_csv(configs_csv):
+def load_configs_from_csv(tuner_cfg):
     """Load the configs from csv file."""
+    configs_csv = tuner_cfg.get("configs_csv", None)
+    assert os.path.exists(
+        configs_csv
+    ), "configs_csv file is necessary in CustomizeSearch mode."
     all_configs = []
     extract_keys_integer = [
         "dp_degree",
@@ -1793,6 +1907,14 @@ def load_configs_from_csv(configs_csv):
         "sharding_degree",
         "sharding_stage",
     ]
+    global_batch_size = tuner_cfg.get("global_batch_size", None)
+    assert isinstance(
+        global_batch_size, list
+    ), "global_batch_size must be list!"
+    assert (
+        len(global_batch_size) == 1
+    ), "global_batch_size must be a list with only one element!"
+
     extract_keys_string = ["use_recompute", "recompute_granularity"]
     with open(configs_csv, "r") as f:
         reader = csv.DictReader(f)
@@ -1808,6 +1930,22 @@ def load_configs_from_csv(configs_csv):
                     f"{extract_key} must be integer, but got {val}"
                 )
 
+        global_batch_size = global_batch_size[0]
+        dp_degree = config["dp_degree"]
+        sharding_degree = config["sharding_degree"]
+        assert global_batch_size % (dp_degree * sharding_degree) == 0, (
+            f"global_batch_size={global_batch_size} must be divisible by (dp_candidate={dp_degree} * sharding_degree={sharding_degree}) = {dp_degree * sharding_degree}. "
+            f"Actual remainder: {global_batch_size % (dp_degree * sharding_degree)}"
+        )
+
+        local_batch_size = global_batch_size // (dp_degree * sharding_degree)
+        micro_batch_size = config["micro_batch_size"]
+        assert local_batch_size % micro_batch_size == 0, (
+            f"local_batch_size={local_batch_size} must be divisible by micro_batch_size={micro_batch_size}. "
+            f"Actual remainder: {local_batch_size % micro_batch_size}"
+        )
+
+        config["acc_steps"] = local_batch_size // micro_batch_size
         use_recompute = raw_config.get("use_recompute", "")
         assert use_recompute.lower() in [
             "true",
