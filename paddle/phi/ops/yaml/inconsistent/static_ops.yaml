@@ -597,6 +597,19 @@
   interfaces : paddle::dialect::InferSymbolicShapeInterface
   traits : paddle::dialect::ForwardOnlyTrait
 
+- op : p_recv
+  args : (int ring_id = 0, int peer = 0, DataType dtype = DataType::FLOAT32, int[] out_shape = {}, bool dynamic_shape = false)
+  output : Tensor(out)
+  infer_meta :
+    func : PRecvInferMeta
+    param : [peer, dtype, out_shape, dynamic_shape]
+  kernel :
+    func : p_recv
+    param : [peer, dtype, out_shape, dynamic_shape]
+    data_type : dtype
+  interfaces : paddle::dialect::InferSymbolicShapeInterface
+  traits : paddle::dialect::ForwardOnlyTrait
+
 - op : partial_recv
   args : (int ring_id = 0, int peer = 0, DataType dtype=DataType::FLOAT32, int[] out_shape= {}, int num = 1, int id = 0)
   output : Tensor(out)

@@ -48,7 +48,7 @@ def _recv_in_dygraph(
 def _recv_in_static_mode(
     tensor, src_rank_in_group, group, sync_op, use_calc_stream
 ):
-    op_type = 'recv_v2'
+    op_type = 'p_recv'
     data_feeder.check_variable_and_dtype(
         tensor,
         'tensor',

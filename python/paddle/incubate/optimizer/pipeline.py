@@ -819,7 +819,7 @@ class PipelineOptimizer:
                         )
                         block._insert_op_without_sync(
                             index=index + extra_index_info['index'],
-                            type='recv_v2',
+                            type='p_recv',
                             outputs={'Out': [var]},
                             attrs={
                                 'out_shape': var_shape,
@@ -935,7 +935,7 @@ class PipelineOptimizer:
                         block._insert_op_without_sync(
                             index=index + extra_index_info['index'],
                             type=(
-                                'recv_v2'
+                                'p_recv'
                                 if not use_mp or is_param
                                 else 'partial_recv'
                             ),
@@ -948,7 +948,7 @@ class PipelineOptimizer:
                                 'use_calc_stream': True,
                                 'peer': 0,
                                 'ring_id': ring_id,
-                                # if recv_v2, num&id attr is not in op_attrs, will not insert
+                                # if p_recv, num&id attr is not in op_attrs, will not insert
                                 'num': self.mp_degree,
                                 'id': self.mp_rank,
                             },
@@ -965,7 +965,7 @@ class PipelineOptimizer:
                                     self._op_role_key: op_role,
                                     'use_calc_stream': True,
                                     'ring_id': 0,
-                                    # if recv_v2, num&id attr is not in op_attrs, will not insert
+                                    # if p_recv, num&id attr is not in op_attrs, will not insert
                                     'nranks': self.mp_degree,
                                     'rank': self.mp_rank,
                                 },
@@ -1559,7 +1559,7 @@ class PipelineOptimizer:
                 block = prog.block(0)
                 for op in block.ops:
                     if (
-                        op.type == "recv_v2"
+                        op.type == "p_recv"
                         or op.type == "create_py_reader"
                         or op.type == "read"
                         or op.type == "update_loss_scaling"
@@ -1623,7 +1623,7 @@ class PipelineOptimizer:
                 )
                 read_block._insert_op(
                     index=0,
-                    type='recv_v2',
+                    type='p_recv',
                     outputs={'Out': [read_block.var(var_name)]},
                     attrs={
                         'out_shape': read_block.var(var_name).shape,
@@ -1693,7 +1693,7 @@ class PipelineOptimizer:
 
         block = program.block(0)
 
-        recv_type = 'recv_v2' if self.mp_degree == 1 else 'partial_recv'
+        recv_type = 'p_recv' if self.mp_degree == 1 else 'partial_recv'
         backward_recv_index = None
         for index, op in enumerate(block.ops):
             if op.type == recv_type and self._is_backward_op(op):
@@ -1750,7 +1750,7 @@ class PipelineOptimizer:
                 op.type != "partial_recv"
                 and op.type != "partial_allgather"
                 and op.type != "nop"
-                and op.type != "recv_v2"
+                and op.type != "p_recv"
             ):
                 continue
             if op_role == int(self._op_role.Forward):

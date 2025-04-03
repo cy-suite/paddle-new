@@ -87,7 +87,7 @@ class TestReshardSToRCrossMesh:
                     'builtin.parameter',
                     'pd_op.data',
                     'dist_op.shard_tensor',
-                    'pd_op.recv_v2',
+                    'pd_op.p_recv',
                     'pd_op.all_gather',
                 ]
                 np.testing.assert_equal(
@@ -119,7 +119,7 @@ class TestReshardSToRCrossMesh:
                     'builtin.parameter',
                     'pd_op.data',
                     'dist_op.shard_tensor',
-                    'pd_op.recv_v2',
+                    'pd_op.p_recv',
                     'pd_op.all_gather',
                     'pd_op.full',
                     'pd_op.split_with_num',
@@ -147,7 +147,7 @@ class TestReshardSToRCrossMesh:
                 elif self._shard == 1:
                     assert op_operand_dist_attr.dims_mapping == [-1, 0]
                 assert op_operand_dist_attr.partial_status == {}
-            elif op.name() == 'pd_op.recv_v2':
+            elif op.name() == 'pd_op.p_recv':
                 # check op dist_attr
                 assert op.dist_attr.num_operands() == 0
                 assert op.dist_attr.num_results() == 1

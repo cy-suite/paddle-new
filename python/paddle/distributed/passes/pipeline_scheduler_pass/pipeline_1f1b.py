@@ -180,7 +180,7 @@ class Pipeline1F1BPass(PipelinePassBase):
                 self._erase_op_from_other_programs(
                     op_idx, self.BACKWARD, ops_dict, job_types
                 )
-            elif region == "fwd" and op.name() != "pd_op.recv_v2":
+            elif region == "fwd" and op.name() != "pd_op.p_recv":
                 self._handle_func(
                     op_idx,
                     self.FORWARD,
@@ -192,7 +192,7 @@ class Pipeline1F1BPass(PipelinePassBase):
                 self._erase_op_from_other_programs(
                     op_idx, self.FORWARD, ops_dict, job_types
                 )
-            elif region == "fwd" and op.name() == "pd_op.recv_v2":
+            elif region == "fwd" and op.name() == "pd_op.p_recv":
                 self._handle_func(
                     op_idx,
                     self.RECV_FORWARD,
@@ -324,7 +324,7 @@ class Pipeline1F1BPass(PipelinePassBase):
                     ring_id = op.attrs()["ring_id"]
                     op.set_execution_stream("send_recv_stream")
                     op.set_scheduling_priority(0)
-                elif op.name() == "pd_op.recv_v2":
+                elif op.name() == "pd_op.p_recv":
                     op.set_bool_attr("dynamic_shape", False)
                     op.set_bool_attr("use_calc_stream", True)
                     op.set_execution_stream("send_recv_stream")

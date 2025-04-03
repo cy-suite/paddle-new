@@ -174,7 +174,7 @@ class DistributedSaver:
         for idx, op in enumerate(ops):
             if op.attr(op_role_key) != op_role_forward:
                 continue
-            if op.type == "read" or op.type == "feed" or op.type == 'recv_v2':
+            if op.type == "read" or op.type == "feed" or op.type == 'p_recv':
                 feed_vars_names += op.output("Out")
             if op.type == "send_v2":
                 fetch_vars_names += op.input("X")

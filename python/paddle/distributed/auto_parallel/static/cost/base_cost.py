@@ -27,6 +27,7 @@ from ..utils import _get_comm_group, _get_idx_in_axis
 COMM_OP_TYPE = [
     "send_v2",
     "recv_v2",
+    "p_recv",
     "broadcast",
     "all_gather",
     "c_allreduce_sum",

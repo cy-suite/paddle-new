@@ -447,7 +447,7 @@ def _pir_overlap_send_recv(program):
     The finally target of this function is as follows:
         1. no need to insert the 'c_sync_calc' and 'c_sync_calc' operators
         2. 'send_v2' operator uses 'dist_attr.execution_stream' to set stream of its own.
-        3. 'recv_v2' operator uses 'dist_attr.execution_stream' to set stream of its own.
+        3. 'p_recv' operator uses 'dist_attr.execution_stream' to set stream of its own.
     """
     for block in program.blocks:
         for op in block.ops:
@@ -457,7 +457,7 @@ def _pir_overlap_send_recv(program):
                 ring_id = op.attrs()["ring_id"]
                 op.set_execution_stream(f"send_stream_{ring_id}")
                 op.set_scheduling_priority(0)
-            elif op.name() == "pd_op.recv_v2":
+            elif op.name() == "pd_op.p_recv":
                 op.set_bool_attr("dynamic_shape", False)
                 op.set_bool_attr("use_calc_stream", True)
                 op.set_execution_stream("recv_stream")
@@ -468,7 +468,7 @@ def _insert_sync_for_fthenb_1f1b(program, dist_context=None):
     """
     This implementation refers to lots of Paddle/python/paddle/base/optimizer.py.
     The difference between this function with 'PipelineOptimizer' is that
-    'send_v2' op and 'recv_v2' op have been inserted in program by 'reshard'.
+    'send_v2' op and 'p_recv' op have been inserted in program by 'reshard'.
     """
 
     for block in program.blocks:
@@ -482,7 +482,7 @@ def _insert_sync_for_fthenb_1f1b(program, dist_context=None):
         # insert sync ops
         for index, op in enumerate(list(block.ops)):
             # NOTE: pipeline might hang when dynamic_shape is True
-            if op.type in ['send_v2', 'recv_v2']:
+            if op.type in ['send_v2', 'p_recv']:
                 op._set_attr("dynamic_shape", False)
             # set send op on comm stream
             if op.type == 'send_v2':
@@ -556,7 +556,7 @@ def _insert_sync_for_fthenb_1f1b(program, dist_context=None):
         offset = 0
         backward_recv_index = None
         for index, op in enumerate(block.ops):
-            if op.type == "recv_v2" and is_backward_op(op):
+            if op.type == "p_recv" and is_backward_op(op):
                 backward_recv_index = index
                 break
         if backward_recv_index is None:
@@ -917,7 +917,7 @@ def _add_event_dependency(recorder_op, waiter_op):
     '''
     Add the extra event dependency of the two operators.
     This function mainly aims for the cross-programs in pipeline parallelism,
-    especial for the 'send_v2' 'recv_v2' etc.
+    especial for the 'send_v2' 'p_recv' etc.
     '''
     if not recorder_op.dist_attr.force_record_event:
         recorder_op.dist_attr.force_record_event = True

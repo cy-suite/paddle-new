@@ -74,7 +74,7 @@ class TestReshardRToSCrossMesh:
         if dist.get_rank() in self._in_mesh.process_ids:
             assert 'pd_op.send_v2' in new_ops
         else:
-            assert 'pd_op.recv_v2' in new_ops
+            assert 'pd_op.p_recv' in new_ops
             assert 'pd_op.slice' in new_ops
         for op in main_program.global_block().ops:
             if op.name() == 'pd_op.send_v2':
@@ -87,7 +87,7 @@ class TestReshardRToSCrossMesh:
                 assert operand_dist_attr.process_mesh == self._in_mesh
                 assert operand_dist_attr.dims_mapping == [-1, -1, -1]
                 assert operand_dist_attr.partial_status == {}
-            elif op.name() == 'pd_op.recv_v2':
+            elif op.name() == 'pd_op.p_recv':
                 assert op.dist_attr.process_mesh == self._out_mesh
                 assert op.result(0).dist_attr() == op.dist_attr.result(0)
                 result_dist_attr = op.result(0).dist_attr()
