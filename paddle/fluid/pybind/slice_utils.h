@@ -389,24 +389,24 @@ static void ParseIndex(const paddle::Tensor& tensor,
                                 slice_tensor.shape()[0],
                                 dim_len,
                                 current_dim));
-        } else if (slice_tensor.dtype() == phi::DataType::INT64 ||
-                   slice_tensor.dtype() == phi::DataType::INT32) {
-          // valid_index is the number of dimensions exclude None index
-          const int valid_indices = size - none_axes->size() - ell_count;
-          PADDLE_ENFORCE_EQ(
-              valid_indices <= rank,
-              true,
-              common::errors::InvalidArgument(
-                  "Too many indices (%d) for tensor of dimension %d.",
-                  valid_indices,
-                  rank));
-          auto ten =
-              (*static_cast<phi::DenseTensor*>(slice_tensor.impl().get()));
-          if (slice_tensor.dtype() == phi::DataType::INT32) {
-            CheckTensorIndexValue<int32_t>(&ten, dim_len);
-          } else if (slice_tensor.dtype() == phi::DataType::INT64) {
-            CheckTensorIndexValue<int64_t>(&ten, dim_len);
-          }
+          // } else if (slice_tensor.dtype() == phi::DataType::INT64 ||
+          //            slice_tensor.dtype() == phi::DataType::INT32) {
+          //   // valid_index is the number of dimensions exclude None index
+          //   const int valid_indices = size - none_axes->size() - ell_count;
+          //   PADDLE_ENFORCE_EQ(
+          //       valid_indices <= rank,
+          //       true,
+          //       common::errors::InvalidArgument(
+          //           "Too many indices (%d) for tensor of dimension %d.",
+          //           valid_indices,
+          //           rank));
+          //   auto ten =
+          //       (*static_cast<phi::DenseTensor*>(slice_tensor.impl().get()));
+          //   if (slice_tensor.dtype() == phi::DataType::INT32) {
+          //     CheckTensorIndexValue<int32_t>(&ten, dim_len);
+          //   } else if (slice_tensor.dtype() == phi::DataType::INT64) {
+          //     CheckTensorIndexValue<int64_t>(&ten, dim_len);
+          //   }
         }
         *has_advanced_index = true;
         advanced_index->push_back(std::move(slice_tensor));
