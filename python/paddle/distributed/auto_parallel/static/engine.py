@@ -19,7 +19,6 @@ import json
 import logging
 import numbers
 import os
-import random
 from typing import TYPE_CHECKING, Any, Literal
 
 import numpy as np
@@ -44,10 +43,9 @@ from paddle.framework import (
 )
 from paddle.metric import Metric
 from paddle.static import InputSpec, Operator, Variable, global_scope
-from paddle.static.amp.fp16_utils import _convert_float_to_bfloat16
 
 from ...utils.log_utils import get_logger
-from ..interface import CollectionNames, fetch, get_collection
+from ..interface import CollectionNames, get_collection
 from ..static.dist_tensor import DistributedTensor
 from ..strategy import Strategy
 from .callbacks import config_callbacks
@@ -75,7 +73,7 @@ from .pir_pass import (
     remove_unuseful_comm_op_pass,
 )
 from .planner_v2 import Planner
-from .process_group import get_all_process_groups, new_process_group
+from .process_group import get_all_process_groups
 from .utils import set_all_ops_op_role
 
 if TYPE_CHECKING:
@@ -580,37 +578,8 @@ class Engine:
         # TODO(2024-Q2)
         if self._in_pir_mode:
             return fetch_names, fetch_indices
-
-        def _process_fetch_group(group_name, var_list):
-            group_indices = []
-            for var in var_list:
-                # Remove duplicate var_names
-                if self._is_local_var(var):
-                    var_name = _to_name_str(var)
-                    if var_name not in fetch_names:
-                        fetch_names.append(var_name)
-                    group_indices.append(fetch_names.index(var_name))
-            fetch_indices.append(group_indices)
-
-        dist_context = self._dist_contexts[mode]
-        fetch_vars = dist_context.serial_fetch_vars
-        if mode != "predict":
-            _process_fetch_group("loss", fetch_vars["loss"])
-        if mode != "predict":
-            metrics = fetch_vars["metrics"]
-            for i, var_list in enumerate(metrics):
-                _process_fetch_group("metrics_" + str(i), var_list)
-        if mode == "predict":
-            _process_fetch_group("outputs", fetch_vars["outputs"])
-        for usr_fetch in user_fetches or []:
-            var_name = _to_name_str(usr_fetch)
-            fetch(var_name)
-        user_fetches_collection = [
-            item[1] for item in get_collection(CollectionNames.FETCHES)
-        ]
-        var_list = user_fetches_collection or []
-        _process_fetch_group("fetches", var_list)
-        return fetch_names, fetch_indices
+        else:
+            raise NotImplementedError("_prepare_fetch() only support PIR now.")
 
     def _prepare_logger(
         self,
@@ -1035,37 +1004,23 @@ class Engine:
         self._pir_dist_startup_progs[mode] = startup_program
 
     def _prepare_program(self, mode, init_parameters=True):
-        if self._in_pir_mode:
-            with paddle.amp.auto_cast(
-                enable=self._strategy.amp.enable,
-                custom_white_list=self._strategy.amp.custom_white_list,
-                custom_black_list=self._strategy.amp.custom_black_list,
-                level=self._strategy.amp.level,
-                dtype=self._strategy.amp.dtype,
-                use_promote=self._strategy.amp.use_promote,
-            ):
-                self._build(mode)
-            self._parallel_pir(mode)
-            # Init comm
-            self._init_comm()
-            # startup program
-            self._initialize(mode, init_parameters)
-            self._has_prepared[mode] = True
-            return
+        if not self._in_pir_mode:
+            raise NotImplementedError("prepare_program() only support PIR now.")
 
-        # legacy program
-        # Do the build process
-        self._build(mode)
-        # Do the planning process
-        self._plan(mode)
-        # Do the parallel process
-        self._parallel(mode)
+        with paddle.amp.auto_cast(
+            enable=self._strategy.amp.enable,
+            custom_white_list=self._strategy.amp.custom_white_list,
+            custom_black_list=self._strategy.amp.custom_black_list,
+            level=self._strategy.amp.level,
+            dtype=self._strategy.amp.dtype,
+            use_promote=self._strategy.amp.use_promote,
+        ):
+            self._build(mode)
+        self._parallel_pir(mode)
         # Init comm
         self._init_comm()
         # startup program
         self._initialize(mode, init_parameters)
-        # mark main program for further decompose
-        self._mark_prim(mode)
         self._has_prepared[mode] = True
 
     def _process_dist_input_specs(self):
@@ -1185,61 +1140,8 @@ class Engine:
             self._fwd_main_progs[mode] = serial_main_prog
             self._startup_progs[mode] = serial_startup_prog
             return
-
-        default_ctx = get_default_distributed_context()
-        if not default_ctx.has_annotation:
-            # We build the world process group because the data parallel
-            # needs all ranks by default.
-            new_process_group(list(range(self._nranks)))
-            default_ctx.data_parallel = True
-            self._inputs = [
-                auto_utils.set_data_parallel(var) for var in self._inputs
-            ]
-            self._labels = [
-                auto_utils.set_data_parallel(var) for var in self._labels
-            ]
-
-        feed_vars = {"inputs": self._inputs, "labels": self._labels}
-
-        fetch_vars = {
-            "outputs": paddle.utils.flatten(outputs),
-            "loss": self._losses,
-            "metrics": metrics,
-        }
-
-        if mode != "train":
-            serial_main_prog = serial_main_prog.clone(for_test=True)
-
-        auto_utils.set_recompute_segments(
-            self._model, self._losses, self._strategy, serial_main_prog
-        )
-        self._dist_contexts[mode] = DistributedContext(
-            serial_main_prog,
-            serial_startup_prog,
-            self._optimizer,
-            self._losses,
-            feed_vars,
-            fetch_vars,
-            self._cluster,
-            self._strategy,
-            self._json_config,
-        )
-        self._fwd_dist_contexts[mode] = DistributedContext(
-            serial_main_prog,
-            serial_startup_prog,
-            self._optimizer,
-            self._losses,
-            feed_vars,
-            fetch_vars,
-            self._cluster,
-            self._strategy,
-            self._json_config,
-        )
-        self._dist_contexts[mode].gradient_scale = self._strategy.gradient_scale
-        self._dist_contexts[mode].gradient_scale_using_allreduce_avg = (
-            self._strategy.gradient_scale_using_allreduce_avg
-        )
-        self._fwd_main_progs[mode] = serial_main_prog.clone()
+        else:
+            raise NotImplementedError("_build() only support PIR now.")
 
     def _optimization_tuning(self, mode, dataset, batch_size):
         if not self._tuning.enable:
@@ -1349,18 +1251,8 @@ class Engine:
                 for process_group in all_process_groups:
                     process_group.instantiate()
                 return
-
-            # Traverse different rank programs and traverse each op of them,
-            # instantiate communication by process_mapping.
-            all_process_groups = get_all_process_groups()
-
-            if self._strategy.auto_mode == "full_random":
-                auto_utils.initialize_pg_in_full_mode(
-                    all_process_groups, self._cur_rank
-                )
             else:
-                for process_group in all_process_groups:
-                    process_group.instantiate()
+                raise NotImplementedError("_init_comm() only support PIR now.")
 
     def _init_lr(self, main_program):
         # hack to find learning_rate op
@@ -1386,177 +1278,101 @@ class Engine:
                 paddle.distributed.ParallelEnv().dev_id
             )
 
-        if self._in_pir_mode:
-            # FIXME(ljz) avoid shared same tensor more than once in different mode
-            if mode != "train":
-                return
-            # TODO(2024-Q2)
-            # 1. unify random control
-            # 2. initialization of non-parameter buffer
-            # 3. run startup program for pir
-            # 4. lazy init adaption
-            # 5. amp init adaption
-            # 6. vpp init adaption
+        if not self._in_pir_mode:
+            raise NotImplementedError("_initialize() only support PIR now.")
 
-            # self._init_lr(self._pir_dense_main_progs[mode])
-            self.program_helper.init_pir(
-                self._pir_dist_main_progs[mode], self._place
-            )
-            changed_output_op_list = []
-            if self._executor is None:
-                self._executor = paddle.static.Executor(self._place)
-                startup_prog = self._startup_progs[mode].clone()
-                dist_main_prog = self._pir_dist_main_progs[mode]
-                name_map_value = {}
-                for op in dist_main_prog.global_block().ops:
-                    if op.name() == "pd_op.data":
-                        var_name = op.str_attr("name")
-                        assert (
-                            var_name not in name_map_value
-                        ), f"The value {var_name} in {op} is already exist"
-                        name_map_value[var_name] = op.result(0)
-                del_ops = []
-                block = startup_prog.global_block()
-                for op in block.ops:
-                    if op.name() == "builtin.set_parameter":
-                        var_name = op.str_attr("parameter_name")
-                    elif op.name() == "builtin.shadow_output":
-                        var_name = op.str_attr("output_name")
-                    else:
-                        continue
-                    scope_var = global_scope().find_var(var_name)
-                    if scope_var and scope_var.get_tensor()._is_initialized():
-                        param = op.operand_source(0)
-                        initial_op = param.get_defining_op()
-                        new_param = block.add_kwarg(var_name, param.type())
-                        new_param.persistable = True
-                        new_param.place_attr = scope_var.get_tensor()._place()
-                        param.replace_all_uses_with(new_param)
-                        del_ops.append(op)
-                        del_ops.append(initial_op)
-                    elif var_name in name_map_value:
-                        local_shape = name_map_value[var_name]._local_shape
-                        global_shape = name_map_value[var_name].shape
-                        if local_shape != global_shape:
-                            src_value = op.operand_source(0)
-                            assert src_value.shape == global_shape
-                            dst_dist_attr = name_map_value[var_name].dist_attr()
-                            if not src_value.is_dist():
-                                src_dist_attr = paddle.base.libpaddle.pir.create_tensor_dist_attribute(
-                                    dst_dist_attr.process_mesh,
-                                    [-1] * len(src_value.shape),
-                                    {},
-                                )
-                                src_value.set_type(
-                                    paddle.base.libpaddle.pir.cvt_to_dist_type(
-                                        src_value.type(), src_dist_attr
-                                    )
-                                )
-                            pir.set_insertion_point_after(
-                                src_value.get_defining_op()
-                            )
-                            reshard_var = paddle._C_ops.reshard_v2(
-                                src_value, dst_dist_attr
-                            )
-                            if src_value.persistable:
-                                src_value.persistable = False
-                                changed_output_op_list.append(op)
-                            op.operand(0).set_source(reshard_var)
-                for del_op in del_ops:
-                    del_op.erase()
-
-                set_all_ops_op_role(startup_prog.global_block(), OpRole.Forward)
-                ReshardPasses.apply_reshard_pass(startup_prog)
-                paddle.base.libpaddle.pir.apply_dist2dense_pass(startup_prog)
-                remove_unuseful_comm_op_pass(startup_prog)
-
-                for op in changed_output_op_list:
-                    op.operand_source(0).persistable = True
-                self._executor.run(startup_prog)
-                if self._job_plan is not None:
-                    # pipeline scheduling should be enabled after running
-                    # startup program, otherwise the startup program cannot
-                    # run correctly.
-                    self._executor._set_plan(self._job_plan)
+        # FIXME(ljz) avoid shared same tensor more than once in different mode
+        if mode != "train":
             return
+        # TODO(2024-Q2)
+        # 1. unify random control
+        # 2. initialization of non-parameter buffer
+        # 3. run startup program for pir
+        # 4. lazy init adaption
+        # 5. amp init adaption
+        # 6. vpp init adaption
 
-        if self._strategy.seed:
-            paddle.seed(self._strategy.seed + self._dp_ranks[0])
-            np.random.seed(self._strategy.seed + self._dp_ranks[0])
-            random.seed(self._strategy.seed + self._dp_ranks[0])
-
-        dist_context = self._dist_contexts[mode]
-        dist_main_program = dist_context.dist_main_programs[self._cur_rank]
-        if self._dygraph_mode:
-            self.program_helper.init(
-                dist_main_program, self._place, dist_context
-            )
-            # The model's instance variables (not parameters), used in forward function,
-            # have been initialized when initialize model in dynamic mode.
-            if self._model and len(self._model.buffers()) > 0:
-                for buffer in self._model.buffers():
-                    if dist_main_program.global_block().has_var(buffer.name):
-                        dest_type = (
-                            dist_main_program.global_block()
-                            .var(buffer.name)
-                            .dtype
-                        )
-                        scope_var = global_scope().find_var(buffer.name)
-                        buffer_tensor = (
-                            global_scope().var(buffer.name).get_tensor()
-                        )
-                        if scope_var and buffer_tensor._is_initialized():
-                            continue
-                        # for amp
-                        if dest_type == paddle.bfloat16:
-                            buffer_tensor.set(
-                                _convert_float_to_bfloat16(
-                                    self._place, buffer.numpy()
-                                ),
-                                self._place,
-                            )
-                        elif dest_type == paddle.float16:
-                            buffer_tensor.set(
-                                np.float16(buffer.numpy()), self._place
-                            )
-                        else:
-                            buffer_tensor.set(buffer.numpy(), self._place)
-
+        # self._init_lr(self._pir_dense_main_progs[mode])
+        self.program_helper.init_pir(
+            self._pir_dist_main_progs[mode], self._place
+        )
+        changed_output_op_list = []
         if self._executor is None:
             self._executor = paddle.static.Executor(self._place)
-            uninitialized = []
-            dist_startup_prog = dist_context.dist_startup_programs[
-                self._cur_rank
-            ]
-            for var in dist_startup_prog.list_vars():
-                scope_var = global_scope().find_var(var.name)
-                if scope_var and scope_var.get_tensor()._is_initialized():
+            startup_prog = self._startup_progs[mode].clone()
+            dist_main_prog = self._pir_dist_main_progs[mode]
+            name_map_value = {}
+            for op in dist_main_prog.global_block().ops:
+                if op.name() == "pd_op.data":
+                    var_name = op.str_attr("name")
+                    assert (
+                        var_name not in name_map_value
+                    ), f"The value {var_name} in {op} is already exist"
+                    name_map_value[var_name] = op.result(0)
+            del_ops = []
+            block = startup_prog.global_block()
+            for op in block.ops:
+                if op.name() == "builtin.set_parameter":
+                    var_name = op.str_attr("parameter_name")
+                elif op.name() == "builtin.shadow_output":
+                    var_name = op.str_attr("output_name")
+                else:
                     continue
-                uninitialized.append(var)
-            # Make sure the number of communication operators is consistent
-            commu_ops = []
-            if self._nranks > 1:
-                for op in dist_startup_prog.global_block().ops:
-                    if auto_utils.is_comm_op(op):
-                        commu_ops.append(op)
-            reserved_vars_and_ops = uninitialized + commu_ops
-            if reserved_vars_and_ops:
-                prune_startup_prog = dist_startup_prog._prune(
-                    reserved_vars_and_ops
-                )
-                self._executor.run(prune_startup_prog)
+                scope_var = global_scope().find_var(var_name)
+                if scope_var and scope_var.get_tensor()._is_initialized():
+                    param = op.operand_source(0)
+                    initial_op = param.get_defining_op()
+                    new_param = block.add_kwarg(var_name, param.type())
+                    new_param.persistable = True
+                    new_param.place_attr = scope_var.get_tensor()._place()
+                    param.replace_all_uses_with(new_param)
+                    del_ops.append(op)
+                    del_ops.append(initial_op)
+                elif var_name in name_map_value:
+                    local_shape = name_map_value[var_name]._local_shape
+                    global_shape = name_map_value[var_name].shape
+                    if local_shape != global_shape:
+                        src_value = op.operand_source(0)
+                        assert src_value.shape == global_shape
+                        dst_dist_attr = name_map_value[var_name].dist_attr()
+                        if not src_value.is_dist():
+                            src_dist_attr = paddle.base.libpaddle.pir.create_tensor_dist_attribute(
+                                dst_dist_attr.process_mesh,
+                                [-1] * len(src_value.shape),
+                                {},
+                            )
+                            src_value.set_type(
+                                paddle.base.libpaddle.pir.cvt_to_dist_type(
+                                    src_value.type(), src_dist_attr
+                                )
+                            )
+                        pir.set_insertion_point_after(
+                            src_value.get_defining_op()
+                        )
+                        reshard_var = paddle._C_ops.reshard_v2(
+                            src_value, dst_dist_attr
+                        )
+                        if src_value.persistable:
+                            src_value.persistable = False
+                            changed_output_op_list.append(op)
+                        op.operand(0).set_source(reshard_var)
+            for del_op in del_ops:
+                del_op.erase()
 
-            if hasattr(self, "_state_dict") and hasattr(self, "_dist_attr"):
-                self._set_state_dict(
-                    mode, self._strict, self._state_dict, self._dist_attr
-                )
+            set_all_ops_op_role(startup_prog.global_block(), OpRole.Forward)
+            ReshardPasses.apply_reshard_pass(startup_prog)
+            paddle.base.libpaddle.pir.apply_dist2dense_pass(startup_prog)
+            remove_unuseful_comm_op_pass(startup_prog)
 
-        if self._strategy.reinit:
-            self._logger.info("NOTE: parameters will be re-initialized.")
-            dist_startup_prog = dist_context.dist_startup_programs[
-                self._cur_rank
-            ]
-            self._executor.run(dist_startup_prog)
+            for op in changed_output_op_list:
+                op.operand_source(0).persistable = True
+            self._executor.run(startup_prog)
+            if self._job_plan is not None:
+                # pipeline scheduling should be enabled after running
+                # startup program, otherwise the startup program cannot
+                # run correctly.
+                self._executor._set_plan(self._job_plan)
+        return
 
     # distributed training combined with prim mechanism (prim is behind of distributed)
     # for local main subprogram after distributed partition,
@@ -2097,10 +1913,11 @@ class Engine:
         fetch_list: list[Tensor | str | Operator | Value] | None = None,
         mode: _Mode | None = None,
     ) -> dict[str, Any]:
+        if not self._in_pir_mode:
+            raise NotImplementedError("run() only support PIR now.")
         if mode is not None:
             self.to_mode(mode)
         feed_dict = self._prepare_feed(data, feed, self._mode)
-        fetch_names, fetch_indices = self._prepare_fetch(fetch_list, self._mode)
         if (
             self._outside_dataloader
             and not self._has_prepared_reader[self._mode]
@@ -2112,34 +1929,34 @@ class Engine:
         )
 
         # TODO(2024-Q2)
-        use_cache = self._strategy.use_cache
-        if self._in_pir_mode:
-            use_cache = False
-            no_fetch = False  # not last rank should not fetch loss in pipeline parallel
-            if self._job_plan is None:
-                program_for_executor = self.main_program
-            else:
-                # NOTE: If pipeline scheduling is enabled, The program_for_executor
-                # is used to tell the executor where to feed data and add fetch op,
-                # not the program to be executed. The ``plan`` object is already
-                # constructed, and the programs to be executed are  stored in the
-                # ``plan`` object.
-                loss_job_type = "forward"
-                if self._strategy.pipeline.schedule_mode == "VPP":
-                    vpp_degree = self._strategy.pipeline.vpp_degree
-                    loss_job_type = f"forward{vpp_degree - 1}"
+        use_cache = False
+        no_fetch = (
+            False  # not last rank should not fetch loss in pipeline parallel
+        )
+        if self._job_plan is None:
+            program_for_executor = self.main_program
+        else:
+            # NOTE: If pipeline scheduling is enabled, The program_for_executor
+            # is used to tell the executor where to feed data and add fetch op,
+            # not the program to be executed. The ``plan`` object is already
+            # constructed, and the programs to be executed are  stored in the
+            # ``plan`` object.
+            loss_job_type = "forward"
+            if self._strategy.pipeline.schedule_mode == "VPP":
+                vpp_degree = self._strategy.pipeline.vpp_degree
+                loss_job_type = f"forward{vpp_degree - 1}"
 
-                program_for_executor = self._job_plan.ir_program(loss_job_type)
+            program_for_executor = self._job_plan.ir_program(loss_job_type)
 
-            loss_value = program_for_executor.get_output_value_by_name(
-                self._loss_names[0]
-            )
-            if pir.is_fake_value(loss_value):
-                no_fetch = True
-                fetch_names = []
-            else:
-                fetch_names = [loss_value]
-            fetch_names += self._pir_fetch_values
+        loss_value = program_for_executor.get_output_value_by_name(
+            self._loss_names[0]
+        )
+        if pir.is_fake_value(loss_value):
+            no_fetch = True
+            fetch_names = []
+        else:
+            fetch_names = [loss_value]
+        fetch_names += self._pir_fetch_values
 
         outs = self._executor.run(
             self.main_program,
@@ -2149,20 +1966,14 @@ class Engine:
             return_numpy=self._strategy.return_numpy,
         )
 
-        if self._in_pir_mode:
-            if no_fetch:
-                logs = {"outputs": None, "loss": None}
-                start_idx = 0
-            else:
-                logs = {"outputs": outs[0], "loss": outs[0]}
-                start_idx = 1
-            for i, name in enumerate(self._pir_user_defined_fetch_names):
-                logs[name] = outs[start_idx + i]
-            return logs
-
-        logs = self._prepare_logger(
-            outs, None, None, None, fetch_names, fetch_indices, self._mode
-        )
+        if no_fetch:
+            logs = {"outputs": None, "loss": None}
+            start_idx = 0
+        else:
+            logs = {"outputs": outs[0], "loss": outs[0]}
+            start_idx = 1
+        for i, name in enumerate(self._pir_user_defined_fetch_names):
+            logs[name] = outs[start_idx + i]
         return logs
 
     def get_feed_list(self) -> list[Tensor]:
@@ -2579,29 +2390,41 @@ class Engine:
     def get_dist_main_program(self, mode: _Mode) -> Program:
         if self._in_pir_mode:
             return self._pir_dist_main_progs[self._mode]
-        return self._dist_contexts[mode].dist_main_programs[self._cur_rank]
+        else:
+            raise NotImplementedError(
+                "get_dist_main_program() only support PIR now."
+            )
 
     def get_dist_startup_program(self, mode: _Mode) -> Program:
         if self._in_pir_mode:
             return self._pir_dist_startup_progs[self._mode]
-        return self._dist_contexts[mode].dist_startup_programs[self._cur_rank]
+        else:
+            raise NotImplementedError(
+                "get_dist_startup_program() only support PIR now."
+            )
 
     def get_serial_main_program(self, mode: _Mode) -> Program:
         if self._in_pir_mode:
             return self._fwd_main_progs[mode]
-        return self._dist_contexts[mode].serial_main_program
+        else:
+            raise NotImplementedError(
+                "get_serial_main_program() only support PIR now."
+            )
 
     def get_serial_startup_program(self, mode: _Mode) -> Program:
         if self._in_pir_mode:
             return self._startup_progs[mode]
-        return self._dist_contexts[mode].serial_startup_program
+        else:
+            raise NotImplementedError(
+                "get_serial_startup_program() only support PIR now."
+            )
 
     @property
     def main_program(self) -> Program:
         if self._in_pir_mode:
             return self._pir_dense_main_progs[self._mode]
-        dist_context = self._dist_contexts[self._mode]
-        return dist_context.dist_main_programs[self._cur_rank]
+        else:
+            raise NotImplementedError("main_program() only support PIR now.")
 
     @property
     def startup_program(self) -> Program:
