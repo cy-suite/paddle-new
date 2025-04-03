@@ -367,6 +367,18 @@ class ReshardPasses:
                             op.result(0).type(),
                         )
 
+                # The OP chunk id of the Optimize role needs to be set to -1.
+                reshard_value = op.operand_source(0)
+                out_op = out_value.get_defining_op()
+                while out_op.op_role == int(OpRole.Optimize):
+                    out_op.set_int_attr("chunk_id", -1)
+                    if out_op.num_operands() == 0:
+                        break
+                    in_value = out_op.operand_source(0)
+                    if in_value.is_same(reshard_value):
+                        break
+                    out_op = in_value.get_defining_op()
+
                 if out_value is not None:
                     op.result(0).replace_all_uses_with(out_value)
 
@@ -712,7 +724,7 @@ def remove_unuseful_comm_op_pass(program):
         if op.name() in comm_ops or (
             op.name() == "pd_op.all_reduce"
             and op.int_attr("reduce_type")
-            in [dist.ReduceOp.SUM, dist.ReduceOp.MAX]
+            in [dist.ReduceOp.SUM, dist.ReduceOp.MAX, dist.ReduceOp.AVG]
         ):
             ring_id = op.int_attr("ring_id")
             process_group = get_process_group(ring_id)
