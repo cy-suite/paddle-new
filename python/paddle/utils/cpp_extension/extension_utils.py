@@ -560,7 +560,7 @@ def normalize_extension_kwargs(kwargs, use_cuda=False):
     kwargs['library_dirs'] = library_dirs
 
     # append compile flags and check settings of compiler
-    extra_compile_args = kwargs.get('extra_compile_args', [])
+    extra_compile_args = kwargs.get('extra_compile_args', {})
     if isinstance(extra_compile_args, dict):
         for compiler in ['cxx', 'nvcc']:
             if compiler not in extra_compile_args:
