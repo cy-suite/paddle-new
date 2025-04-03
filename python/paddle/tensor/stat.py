@@ -202,7 +202,7 @@ def var(
     n = n.astype(dtype)
     if unbiased:
         one_const = paddle.ones([], x.dtype)
-        n = where(n > one_const, n - 1.0, one_const)
+        n = where(n > one_const, n - 1.0, n)
     n.stop_gradient = True
     out /= n
     return out

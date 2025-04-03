@@ -15,6 +15,7 @@
 import unittest
 
 import numpy as np
+from utils import dygraph_guard, static_guard
 
 import paddle
 
@@ -47,33 +48,30 @@ class TestVarAPI(unittest.TestCase):
         pass
 
     def static(self):
-        with paddle.static.program_guard(paddle.static.Program()):
-            x = paddle.static.data('X', self.shape, self.dtype)
-            out = paddle.var(x, self.axis, self.unbiased, self.keepdim)
-            exe = paddle.static.Executor(self.place)
-            res = exe.run(feed={'X': self.x}, fetch_list=[out])
+        with static_guard():
+            with paddle.static.program_guard(paddle.static.Program()):
+                x = paddle.static.data('X', self.shape, self.dtype)
+                out = paddle.var(x, self.axis, self.unbiased, self.keepdim)
+                exe = paddle.static.Executor(self.place)
+                res = exe.run(feed={'X': self.x}, fetch_list=[out])
         return res[0]
 
     def dygraph(self):
-        paddle.disable_static()
-        x = paddle.to_tensor(self.x)
-        out = paddle.var(x, self.axis, self.unbiased, self.keepdim)
-        paddle.enable_static()
+        with dygraph_guard():
+            x = paddle.to_tensor(self.x)
+            out = paddle.var(x, self.axis, self.unbiased, self.keepdim)
         return out.numpy()
 
     def test_api(self):
         out_ref = ref_var(self.x, self.axis, self.unbiased, self.keepdim)
-        out_dygraph = self.dygraph()
 
+        out_dygraph = self.dygraph()
         np.testing.assert_allclose(out_ref, out_dygraph, rtol=1e-05)
         self.assertTrue(np.equal(out_ref.shape, out_dygraph.shape).all())
 
-        def test_static_or_pir_mode():
-            out_static = self.static()
-            np.testing.assert_allclose(out_ref, out_static, rtol=1e-05)
-            self.assertTrue(np.equal(out_ref.shape, out_static.shape).all())
-
-        test_static_or_pir_mode()
+        out_static = self.static()
+        np.testing.assert_allclose(out_ref, out_static, rtol=1e-05)
+        self.assertTrue(np.equal(out_ref.shape, out_static.shape).all())
 
 
 class TestVarAPI_dtype(TestVarAPI):
@@ -108,22 +106,99 @@ class TestVarAPI_unbiased(TestVarAPI):
 
 class TestVarAPI_alias(unittest.TestCase):
     def test_alias(self):
-        paddle.disable_static()
-        x = paddle.to_tensor(np.array([10, 12], 'float32'))
-        out1 = paddle.var(x).numpy()
-        out2 = paddle.tensor.var(x).numpy()
-        out3 = paddle.tensor.stat.var(x).numpy()
-        np.testing.assert_allclose(out1, out2, rtol=1e-05)
-        np.testing.assert_allclose(out1, out3, rtol=1e-05)
-        paddle.enable_static()
+        with dygraph_guard():
+            x = paddle.to_tensor(np.array([10, 12], 'float32'))
+            out1 = paddle.var(x).numpy()
+            out2 = paddle.tensor.var(x).numpy()
+            out3 = paddle.tensor.stat.var(x).numpy()
+            np.testing.assert_allclose(out1, out2, rtol=1e-05)
+            np.testing.assert_allclose(out1, out3, rtol=1e-05)
 
 
 class TestVarError(unittest.TestCase):
-
     def test_error(self):
-        with paddle.static.program_guard(paddle.static.Program()):
-            x = paddle.static.data('X', [2, 3, 4], 'int32')
-            self.assertRaises(TypeError, paddle.var, x)
+        with static_guard():
+            with paddle.static.program_guard(paddle.static.Program()):
+                x = paddle.static.data('X', [2, 3, 4], 'int32')
+                self.assertRaises(TypeError, paddle.var, x)
+
+
+class TestVarAPIZeroSize(unittest.TestCase):
+    def setUp(self):
+        self.dtype = 'float64'
+        self.axis = None
+        self.unbiased = True
+        self.keepdim = False
+        self.set_attrs()
+        self.place = (
+            paddle.CUDAPlace(0)
+            if paddle.base.core.is_compiled_with_cuda()
+            else paddle.CPUPlace()
+        )
+        self.input = np.array([], dtype=self.dtype).reshape([2, 0, 4])
+
+    def set_attrs(self):
+        pass
+
+    def test_api(self):
+        # Dynamic graph test
+        with dygraph_guard():
+            x_tensor = paddle.to_tensor(self.input)
+            out_dy = paddle.var(
+                x_tensor, self.axis, self.unbiased, self.keepdim
+            )
+
+        # Static graph test
+        with static_guard():
+            with paddle.static.program_guard(paddle.static.Program()):
+                x_static = paddle.static.data('X', self.input.shape, self.dtype)
+                out_static = paddle.var(
+                    x_static, self.axis, self.unbiased, self.keepdim
+                )
+                exe = paddle.static.Executor(self.place)
+                res = exe.run(feed={'X': self.input}, fetch_list=[out_static])
+
+        # Reference result (expecting nan for zero-size inputs)
+        out_ref = ref_var(self.input, self.axis, self.unbiased, self.keepdim)
+
+        # Verify results
+        np.testing.assert_allclose(out_dy.numpy(), out_ref, equal_nan=True)
+        np.testing.assert_allclose(res[0], out_ref, equal_nan=True)
+
+
+class TestVarAPIZeroSize_Float32(TestVarAPIZeroSize):
+    def set_attrs(self):
+        self.dtype = 'float32'
+
+
+class TestVarAPIZeroSize_Axis_0(TestVarAPIZeroSize):
+    def set_attrs(self):
+        self.axis = 0
+
+
+class TestVarAPIZeroSize_Axis_Neg1(TestVarAPIZeroSize):
+    def set_attrs(self):
+        self.axis = -1
+
+
+class TestVarAPIZeroSize_Axis_List(TestVarAPIZeroSize):
+    def set_attrs(self):
+        self.axis = [0, 1]
+
+
+class TestVarAPIZeroSize_Axis_Tuple(TestVarAPIZeroSize):
+    def set_attrs(self):
+        self.axis = (1, 2)
+
+
+class TestVarAPIZeroSize_Unbiased_False(TestVarAPIZeroSize):
+    def set_attrs(self):
+        self.unbiased = False
+
+
+class TestVarAPIZeroSize_Keepdim_True(TestVarAPIZeroSize):
+    def set_attrs(self):
+        self.keepdim = True
 
 
 if __name__ == '__main__':

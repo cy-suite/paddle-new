@@ -19,6 +19,7 @@
 
 #include "paddle/phi/backends/all_context.h"
 #include "paddle/phi/core/kernel_registry.h"
+#include "paddle/phi/kernels/full_kernel.h"
 
 namespace phi {
 template <typename T, typename Context>
@@ -27,6 +28,11 @@ void VarianceKernel(const Context& dev_ctx,
                     const std::vector<int64_t>& dims,
                     bool keep_dim,
                     DenseTensor* out) {
+  if (x.numel() == 0) {
+    phi::Full<T, Context>(
+        dev_ctx, phi::IntArray(common::vectorize(out->dims())), NAN, out);
+    return;
+  }
   DenseTensor temp_mean = Mean<T, Context>(dev_ctx, x, dims, true);
   DenseTensor temp_differences = Subtract<T, Context>(dev_ctx, x, temp_mean);
   DenseTensor temp_pow =
