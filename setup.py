@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import ctypes
 import errno
 import fnmatch
@@ -27,7 +28,6 @@ import shutil
 import subprocess
 import sys
 import time
-from contextlib import contextmanager
 from pathlib import Path
 from subprocess import CalledProcessError
 
@@ -871,7 +871,7 @@ def find_files(pattern, root, recursive=False):
             break
 
 
-@contextmanager
+@contextlib.contextmanager
 def cd(path):
     if not os.path.isabs(path):
         raise RuntimeError(f'Can only cd to absolute path, got: {path}')
@@ -1571,48 +1571,55 @@ def get_package_data_and_package_dir():
             ]
 
     if env_dict.get("WITH_XPU") == 'ON':
-        shutil.copy(env_dict.get("XPU_API_LIB"), libs_path)
+
+        def copy_xpu_lib(src_path):
+            with contextlib.suppress(OSError):
+                os.remove(os.path.join(libs_path, os.basename(src_path)))
+            shutil.copy(src_path, libs_path, follow_symlinks=False)
+
+        copy_xpu_lib(env_dict.get("XPU_API_LIB"))
         package_data['paddle.libs'] += [env_dict.get("XPU_API_LIB_NAME")]
         xpu_rt_lib_list = glob.glob(env_dict.get("XPU_RT_LIB") + '*')
         for xpu_rt_lib_file in xpu_rt_lib_list:
-            shutil.copy(xpu_rt_lib_file, libs_path)
+            copy_xpu_lib(xpu_rt_lib_file)
             package_data['paddle.libs'] += [os.path.basename(xpu_rt_lib_file)]
         xpu_cuda_lib_list = glob.glob(env_dict.get("XPU_CUDA_LIB") + '*')
         for xpu_cuda_lib_file in xpu_cuda_lib_list:
-            shutil.copy(xpu_cuda_lib_file, libs_path)
+            copy_xpu_lib(xpu_cuda_lib_file)
             package_data['paddle.libs'] += [os.path.basename(xpu_cuda_lib_file)]
         if env_dict.get("WITH_XPU_XRE5") == 'ON':
             xpu_cuda_rt_lib_list = glob.glob(
                 env_dict.get("XPU_CUDA_RT_LIB") + '*'
             )
             for xpu_cuda_rt_lib_file in xpu_cuda_rt_lib_list:
-                shutil.copy(xpu_cuda_rt_lib_file, libs_path)
+                copy_xpu_lib(xpu_cuda_rt_lib_file)
                 package_data['paddle.libs'] += [
                     os.path.basename(xpu_cuda_rt_lib_file)
                 ]
             xpu_ml_lib_list = glob.glob(env_dict.get("XPU_ML_LIB") + '*')
             for xpu_ml_lib_file in xpu_ml_lib_list:
-                shutil.copy(xpu_ml_lib_file, libs_path)
+                copy_xpu_lib(xpu_ml_lib_file)
                 package_data['paddle.libs'] += [
                     os.path.basename(xpu_ml_lib_file)
                 ]
-            shutil.copy(env_dict.get("XPU_XBLAS_LIB"), libs_path)
+            copy_xpu_lib(env_dict.get("XPU_XBLAS_LIB"))
             package_data['paddle.libs'] += [env_dict.get("XPU_XBLAS_LIB_NAME")]
-            shutil.copy(env_dict.get("XPU_XFA_LIB"), libs_path)
+            copy_xpu_lib(env_dict.get("XPU_XFA_LIB"))
             package_data['paddle.libs'] += [env_dict.get("XPU_XFA_LIB_NAME")]
-            shutil.copy(env_dict.get("XPU_XPUDNN_LIB"), libs_path)
+            copy_xpu_lib(env_dict.get("XPU_XPUDNN_LIB"))
             package_data['paddle.libs'] += [env_dict.get("XPU_XPUDNN_LIB_NAME")]
 
     if env_dict.get("WITH_XPU_BKCL") == 'ON':
-        shutil.copy(env_dict.get("XPU_BKCL_LIB"), libs_path)
+        # shutil.copy(env_dict.get("XPU_BKCL_LIB"), libs_path, follow_symlinks=False)
+        copy_xpu_lib(env_dict.get("XPU_BKCL_LIB"))
         package_data['paddle.libs'] += [env_dict.get("XPU_BKCL_LIB_NAME")]
 
     if env_dict.get("WITH_XPU_XFT") == 'ON':
-        shutil.copy(env_dict.get("XPU_XFT_LIB"), libs_path)
+        copy_xpu_lib(env_dict.get("XPU_XFT_LIB"))
         package_data['paddle.libs'] += [env_dict.get("XPU_XFT_LIB_NAME")]
 
     if env_dict.get("WITH_XPTI") == 'ON':
-        shutil.copy(env_dict.get("XPU_XPTI_LIB"), libs_path)
+        copy_xpu_lib(env_dict.get("XPU_XPTI_LIB"))
         package_data['paddle.libs'] += [env_dict.get("XPU_XPTI_LIB_NAME")]
 
     # remove unused paddle/libs/__init__.py

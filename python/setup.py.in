@@ -14,7 +14,7 @@ import glob
 import shlex
 import ctypes
 
-from contextlib import contextmanager
+import contextlib
 from pathlib import Path
 from setuptools import Command
 from setuptools import setup, Distribution, Extension
@@ -1111,42 +1111,47 @@ if '${WITH_OPENVINO}' == 'ON':
         package_data['paddle.libs'] += ['openvino.dll', 'tbb.dll', 'openvino_paddle_frontend.dll', 'openvino_intel_cpu_plugin.dll']
 
 if '${WITH_XPU}' == 'ON':
-    shutil.copy('${XPU_API_LIB}', libs_path)
+    def copy_xpu_lib(src_path):
+        with contextlib.suppress(OSError):
+            os.remove(os.path.join(libs_path, os.basename(src_path)))
+        shutil.copy(src_path, libs_path, follow_symlinks=False)
+
+    copy_xpu_lib('${XPU_API_LIB}')
     package_data['paddle.libs']+=['${XPU_API_LIB_NAME}']
     xpu_rt_lib_list = glob.glob('${XPU_RT_LIB}*')
     for xpu_rt_lib_file in xpu_rt_lib_list:
-        shutil.copy(xpu_rt_lib_file, libs_path)
+        copy_xpu_lib(xpu_rt_lib_file)
         package_data['paddle.libs']+=[os.path.basename(xpu_rt_lib_file)]
     xpu_cuda_lib_list = glob.glob('${XPU_CUDA_LIB}*')
     for xpu_cuda_lib_file in xpu_cuda_lib_list:
-        shutil.copy(xpu_cuda_lib_file, libs_path)
+        copy_xpu_lib(xpu_cuda_lib_file)
         package_data['paddle.libs'] += [os.path.basename(xpu_cuda_lib_file)]
     if '${WITH_XPU_XRE5}' == 'ON':
         xpu_cuda_rt_lib_list = glob.glob('${XPU_CUDA_RT_LIB}*')
         for xpu_cuda_rt_lib_file in xpu_cuda_rt_lib_list:
-            shutil.copy(xpu_cuda_rt_lib_file, libs_path)
+            copy_xpu_lib(xpu_cuda_rt_lib_file)
             package_data['paddle.libs'] += [os.path.basename(xpu_cuda_rt_lib_file)]
         xpu_ml_lib_list = glob.glob('${XPU_ML_LIB}*')
         for xpu_ml_lib_file in xpu_ml_lib_list:
-            shutil.copy(xpu_ml_lib_file, libs_path)
+            copy_xpu_lib(xpu_ml_lib_file)
             package_data['paddle.libs'] += [os.path.basename(xpu_ml_lib_file)]
-        shutil.copy('${XPU_XBLAS_LIB}', libs_path)
+        copy_xpu_lib('${XPU_XBLAS_LIB}')
         package_data['paddle.libs'] += ['${XPU_XBLAS_LIB_NAME}']
-        shutil.copy('${XPU_XFA_LIB}', libs_path)
+        copy_xpu_lib('${XPU_XFA_LIB}')
         package_data['paddle.libs'] += ['${XPU_XFA_LIB_NAME}']
-        shutil.copy('${XPU_XPUDNN_LIB}', libs_path)
+        copy_xpu_lib('${XPU_XPUDNN_LIB}')
         package_data['paddle.libs'] += ['${XPU_XPUDNN_LIB_NAME}']
 
 if '${WITH_XPU_BKCL}' == 'ON':
-    shutil.copy('${XPU_BKCL_LIB}', libs_path)
+    copy_xpu_lib('${XPU_BKCL_LIB}')
     package_data['paddle.libs']+=['${XPU_BKCL_LIB_NAME}']
 
 if '${WITH_XPU_XFT}' == 'ON':
-    shutil.copy('${XPU_XFT_LIB}', libs_path)
+    copy_xpu_lib('${XPU_XFT_LIB}')
     package_data['paddle.libs']+=['${XPU_XFT_LIB_NAME}']
 
 if '${WITH_XPTI}' == 'ON':
-    shutil.copy('${XPU_XPTI_LIB}', libs_path)
+    copy_xpu_lib('${XPU_XPTI_LIB}')
     package_data['paddle.libs']+=['${XPU_XPTI_LIB_NAME}']
 
 # remove unused paddle/libs/__init__.py
@@ -1380,7 +1385,7 @@ class EggInfo(egg_info):
 
 # we redirect setuptools log for non-windows
 if sys.platform != 'win32':
-    @contextmanager
+    @contextlib.contextmanager
     def redirect_stdout():
         f_log = open('${SETUP_LOG_FILE}', 'w')
         origin_stdout = sys.stdout
@@ -1390,7 +1395,7 @@ if sys.platform != 'win32':
         sys.stdout = origin_stdout
         f_log.close()
 else:
-    @contextmanager
+    @contextlib.contextmanager
     def redirect_stdout():
         yield
 
