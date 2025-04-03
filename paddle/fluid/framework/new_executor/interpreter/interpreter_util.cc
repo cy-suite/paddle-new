@@ -170,7 +170,6 @@ bool IsCommunicationOp(const ::pir::Operation* op) {
   }
   const std::set<std::string> special_comm_op_set = {
       paddle::dialect::SendV2Op::name(),
-      paddle::dialect::RecvV2Op::name(),
       paddle::dialect::PRecvOp::name(),
   };
   const std::string communication_op_prefix = "c_";
