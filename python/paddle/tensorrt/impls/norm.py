@@ -30,14 +30,13 @@ from paddle.tensorrt.converter_utils import (
     trt_sum,
 )
 from paddle.tensorrt.register import converter_registry
+from paddle.tensorrt.util import support_fp32_mix_precision
 
 
 @converter_registry.register(
     "pd_op.layer_norm", trt_version="trt_version_ge=8.6"
 )
 def layernorm_converter(network, paddle_op, inputs):
-    from paddle.tensorrt.util import support_fp32_mix_precision
-
     input_a, scale, bias = inputs
 
     begin_norm_axis = paddle_op.attrs().get("begin_norm_axis", 0)
@@ -135,6 +134,7 @@ def batch_norm_converter(network, paddle_op, inputs):
     batch_norm_layer = network.add_scale(
         input_tensor, trt.ScaleMode.CHANNEL, bias, scale, power
     )
+    support_fp32_mix_precision(paddle_op.name(), batch_norm_layer)
     set_layer_name(batch_norm_layer, paddle_op)
     # For BatchNorm1d,reshape output back to 1d
     if not network.has_implicit_batch_dimension and len(output_shape) < 4:
