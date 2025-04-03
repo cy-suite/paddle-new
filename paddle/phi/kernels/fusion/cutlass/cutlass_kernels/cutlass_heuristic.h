@@ -81,7 +81,11 @@ static std::vector<CutlassTileConfig> get_candidate_tiles(
   };
   std::vector<CutlassTileConfig> quant_B_configs;
   switch (sm) {
-    case 90:
+    case 90: {
+      quant_B_configs = group_size > 0 ? quant_B_configs_sm80_finegrained
+                                       : quant_B_configs_sm80;
+      break;
+    }
     case 86:
     case 80: {
       quant_B_configs = group_size > 0 ? quant_B_configs_sm80_finegrained
@@ -111,7 +115,7 @@ static std::vector<CutlassGemmConfig> get_candidate_configs(
   std::vector<CutlassGemmConfig> candidate_configs;
   int min_stages = 2;
   // Note(yuanlehome): max_stages must smaller than 5!
-  int max_stages = sm >= 80 ? 4 : 2;
+  int max_stages = sm >= 80 ? 5 : 2;
   if (is_moe) {
     max_stages = 5;
   }
