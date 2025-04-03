@@ -1,0 +1,70 @@
+name: Check pr template
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened, edited]
+
+env:
+  AGILE_PULL_ID: ${{ github.event.pull_request.number }}
+  GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+jobs:
+  check:
+    name: Check PR template
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+    - name: Clone paddle
+      uses: actions/checkout@v4
+      with:
+        ref: refs/pull/${{ github.event.pull_request.number }}/merge
+        fetch-depth: 1000
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.13'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        pip install httpx
+
+    - name: Check PR Template
+      run: |
+        python tools/CheckPRTemplate.py; EXCODE=$?
+        echo "EXCODE: $EXCODE"
+        echo "ipipe_log_param_EXCODE: $EXCODE"
+        set +x
+        if [[ "$EXCODE" != "0" ]];then
+          echo -e "######################################################"
+          echo -e "If you encounter a situation where the PR template does not match the error message, please use the following link to update your PR: [  https://raw.githubusercontent.com/PaddlePaddle/Paddle/develop/.github/PULL_REQUEST_TEMPLATE.md ]"
+          echo -e "##ReferenceDocumentation: ##"
+          echo -e "[ https://github.com/PaddlePaddle/Paddle/wiki/PULL-REQUEST-TEMPLATE--REFERENCE ]"
+          echo -e "[ https://github.com/PaddlePaddle/Paddle/wiki/paddle_ci_manual ]"
+          echo -e "######################################################"
+        fi
+
+    - name: Icafe_log
+      env:
+        AGILE_COMPILE_BRANCH: ${{ github.event.pull_request.base.ref }}
+        method: check_pr
+        icafe_download_url: ${{ secrets.ICAFE_DOWNLOAD_URL }}
+        icafe_url: ${{ secrets.ICAFE_URL }}
+        icafe_user: ${{ secrets.ICAFE_USER }}
+        icafe_pwd: ${{ secrets.ICAFE_PWD }}
+        db_host: ${{ secrets.DB_HOST }}
+        db_port: ${{ secrets.DB_PORT }}
+        db_user: ${{ secrets.DB_USER }}
+        db_pd: ${{ secrets.DB_PD }}
+        db_name: ${{ secrets.DB_NAME }}
+        icafe_token: ${{ secrets.ICAFE_TOKEN }}
+        AGILE_CHECKIN_AUTHOR: ${{ github.event.pull_request.user.login }}
+        AGILE_TRIGGER_USER: ${{ github.event.pull_request.user.login }}
+        AGILE_REVISION: ${{ github.event.pull_request.head.sha }}
+      run: |
+        set +e
+        wget -q --no-check-certificate  $icafe_download_url
+        python modify_icafe.py
+        exit 0
