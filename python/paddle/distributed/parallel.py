@@ -20,7 +20,6 @@ import time
 import warnings
 from collections import OrderedDict, namedtuple
 from contextlib import contextmanager
-from multiprocessing import Manager, Process
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -46,9 +45,6 @@ from paddle.distributed.communication.group import (
     _add_new_group,
     _get_global_group,
     is_initialized,
-)
-from paddle.distributed.fleet.base.private_helper_function import (
-    wait_server_ready,
 )
 from paddle.distributed.fleet.launch_utils import check_backend
 
@@ -1152,92 +1148,6 @@ def init_parallel_env() -> Group:
         _set_group_map_backend(group, backend)
         _add_new_group(group)
         parallel_helper._set_parallel_ctx(True)
-        return group
-
-    node_num = {i.split(":")[0] for i in parallel_env.trainer_endpoints}
-    # 3: init gloo context (step 1: httpserver start)
-    init_gloo = int(os.getenv("PADDLE_WITH_GLOO", "0"))
-    if is_cpu_only or init_gloo or backend == "heter":
-        ep_rank_0 = parallel_env.trainer_endpoints[0].split(":")
-        manager = Manager()
-        # global dict to store status
-        http_server_d = manager.dict()
-        http_server_d["running"] = False
-        if parallel_env.rank == 0:
-            # The scope for worker used by http server is '_worker'
-            size = {'_worker': parallel_env.world_size}
-            if backend == "heter":
-                size = {'_worker': len(node_num)}
-            http_server = Process(
-                target=_start_kv_server,
-                args=(int(ep_rank_0[1]), http_server_d, size),
-            )
-            http_server.daemon = True
-            http_server_d["running"] = True
-            http_server.start()
-
-    # 4. init NCCL ParallelStrategy
-    strategy = ParallelStrategy()
-    if parallel_helper._is_parallel_ctx_initialized():
-        warnings.warn("The parallel environment has been initialized.")
-    strategy.nranks = parallel_env.world_size
-    strategy.local_rank = parallel_env.rank
-    strategy.trainer_endpoints = parallel_env.trainer_endpoints
-    strategy.current_endpoint = parallel_env.current_endpoint
-    strategy.nrings = parallel_env.nrings
-
-    # init nccl or bkcl or heter context
-    if is_cpu_only:
-        parallel_helper._set_parallel_ctx(
-            core.GLOOParallelContext(strategy, place)
-        )
-    elif backend == "heter":
-        parallel_helper._set_parallel_ctx(
-            core.HeterParallelContext(strategy, parallel_env.device_id)
-        )
-    elif core.is_compiled_with_cuda():
-        parallel_helper._set_parallel_ctx(
-            core.NCCLParallelContext(strategy, place)
-        )
-    elif core.is_compiled_with_xpu():
-        parallel_helper._set_parallel_ctx(
-            core.BKCLParallelContext(strategy, place)
-        )
-
-    if backend != "heter":
-        other_endpoints = strategy.trainer_endpoints[:]
-        other_endpoints.remove(strategy.current_endpoint)
-        if not is_cpu_only and strategy.local_rank == 0:
-            wait_server_ready(other_endpoints)
-
-    parallel_helper._init_parallel_ctx()
-
-    # 5: init gloo context (step 2: gloo init)
-    # dividing init_gloo into two part because nccl and gloo
-    # are separately looking for free ports which sometimes
-    # leads to port-conflict.
-    if (is_cpu_only or backend == "heter") and parallel_env.rank == 0:
-        # compare to init_gloo, we don't need to
-        # init gloo, because we do this in _init_parallel_ctx;
-        http_server_d["running"] = False
-        http_server.join()
-
-    elif init_gloo:
-        wait_server_ready([parallel_env.trainer_endpoints[0]])
-        gloo_strategy = core.GlooParallelStrategy()
-        gloo_strategy.rank = parallel_env.rank
-        gloo_strategy.rank_num = parallel_env.world_size
-        gloo_strategy.ip_address = ep_rank_0[0]
-        gloo_strategy.ip_port = int(ep_rank_0[1])
-        default_init_timeout_seconds = 3600
-        default_run_timeout_seconds = 9999999
-        gloo_strategy.init_seconds = default_init_timeout_seconds
-        gloo_strategy.run_seconds = default_run_timeout_seconds
-        gloo = core.GlooParallelContext(gloo_strategy)
-        gloo.init()
-        if parallel_env.rank == 0:
-            http_server_d["running"] = False
-            http_server.join()
     return group
 
 
