@@ -210,10 +210,10 @@ void FlashAttnKernelBase(
       (const int*)upstart_row_indices_data,       // upstart_row_indices_data
       (const int*)upend_row_indices_data,         // upend_row_indices_data
       is_flashmask ? startend_row_indices->dims()[1]
-                   : 0,                          // flash_mask_head_num
-      nullptr,                                   // flashmask_maxmin
-      is_flashmask ? flashmask_stream : nullptr  // side_stream
-  );
+                   : 0,                           // flash_mask_head_num
+      nullptr,                                    // flashmask_maxmin
+      is_flashmask ? flashmask_stream : nullptr,  // side_stream
+      0);
   PADDLE_ENFORCE_XDNN_SUCCESS(r, "mha_varlen_fwd");
   if (is_flashmask && flashmask_stream != nullptr) {
     xpu_stream_destroy(flashmask_stream);
