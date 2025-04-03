@@ -58,92 +58,71 @@ def recompute(
         .. code-block:: python
 
             >>> # doctest: +REQUIRES(env:DISTRIBUTED, env:GPU)
+            >>> import numpy as np
             >>> import paddle
+            >>> import paddle.distributed as dist
+            >>> from paddle import nn
+            >>> from paddle.io import BatchSampler, DataLoader, Dataset
             >>> from paddle.distributed.fleet.utils import recompute
-            >>> import random
-            >>> paddle.seed(2023)
-            >>> def get_fc_block(block_idx, input_size, is_last=False):
-            ...     block_name = "block_" + str(block_idx)
-            ...     block = paddle.nn.Sequential(
-            ...         (block_name + "_fc_0", paddle.nn.Linear(input_size, input_size, bias_attr=False)),
-            ...         (block_name + "_dropout", paddle.nn.Dropout(p=0.5)),
-            ...         (block_name + "_relu_1", paddle.nn.ReLU()),
-            ...         (block_name + "_fc_1", paddle.nn.Linear(input_size, input_size, bias_attr=False)),
-            ...         (block_name + "_relu_2", paddle.nn.ReLU()),
-            ...     )
-            ...     if is_last:
-            ...         block.add_sublayer(
-            ...             block_name + "_fc_2",
-            ...             paddle.nn.Linear(
-            ...                 input_size, 1, bias_attr=False
-            ...             )
-            ...         )
-            ...     else:
-            ...         block.add_sublayer(
-            ...             block_name + "_fc_2",
-            ...             paddle.nn.Linear(input_size, input_size, bias_attr=False)
-            ...         )
-            ...     return block
 
-            >>> class Naive_fc_net(paddle.nn.Layer):
-            ...     def __init__(self, input_size=10,
-            ...                 recompute_blocks=[1, 3],
-            ...                 recompute_kwargs={}):
+            >>> # Define the process mesh for distributed training
+            >>> mesh = dist.ProcessMesh([[0, 1, 2, 3], [4, 5, 6, 7]], dim_names=['dp', 'mp'])
+            >>> dist.set_mesh(mesh)
+
+            >>> class RandomDataset(Dataset):
+            ...     def __init__(self, seq_len, hidden, num_samples=100):
             ...         super().__init__()
-            ...         self.recompute_blocks = recompute_blocks
-            ...         self.recompute_kwargs = recompute_kwargs
-            ...         self.runfunc0 = get_fc_block(0, input_size, is_last=False)
-            ...         self.runfunc1 = get_fc_block(1, input_size, is_last=False)
-            ...         self.runfunc2 = get_fc_block(2, input_size, is_last=False)
-            ...         self.runfunc3 = get_fc_block(3, input_size, is_last=False)
-            ...         self.runfunc4 = get_fc_block(4, input_size, is_last=True)
-            ...         self.total_func = [self.runfunc0, self.runfunc1, self.runfunc2, self.runfunc3, self.runfunc4]
-            ...     def forward(self, inputs):
-            ...         nums = len(self.total_func)
-            ...         for i in range(nums):
-            ...             if i in self.recompute_blocks:
-            ...                 inputs = recompute(self.total_func[i], inputs, **{"preserve_rng_state": True})
-            ...             else:
-            ...                 inputs = self.total_func[i](inputs)
-            ...         return inputs
+            ...         self.seq_len = seq_len
+            ...         self.hidden = hidden
+            ...         self.num_samples = num_samples
+            ...     def __getitem__(self, index):
+            ...         inputs = np.random.rand(self.seq_len, self.hidden).astype('float32')
+            ...         labels = np.random.rand(self.seq_len, self.hidden).astype('float32')
+            ...         return (inputs, labels)
+            ...     def __len__(self):
+            ...         return self.num_samples
 
-            >>> def run_model(cuda_state, recompute_block=[], recompute_kwargs={}):
-            ...     gen = paddle.seed(10)
-            ...     gen.manual_seed(10)
-            ...     random.seed(10)
-            ...     if cuda_state:
-            ...         paddle.set_cuda_rng_state(cuda_state)
-            ...     batch_size, input_size = 1, 10
-            ...     model = Naive_fc_net(
-            ...         input_size,
-            ...         recompute_blocks=recompute_block,
-            ...         recompute_kwargs=recompute_kwargs)
-            ...     optimizer = paddle.optimizer.SGD(learning_rate=0.01, parameters=model.parameters())
-            ...     loss_ = []
-            ...     param_ = []
-            ...     grad_ = []
-            ...     for _ in range(5):
-            ...         x = paddle.rand(shape=[batch_size, input_size], dtype="float32")
-            ...         y_pred = model(x)
-            ...         loss = y_pred.mean()
-            ...         loss_.append(loss.item())
-            ...         loss.backward()
-            ...         optimizer.step()
-            ...         param_.append(model.parameters()[9])
-            ...         grad_.append(model.parameters()[3]._grad_ivar())
-            ...         optimizer.clear_grad()
-            ...     return loss_, param_, grad_
+            >>> class MlpModel(paddle.nn.Layer):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self.w0 = paddle.nn.Linear(1024, 4096, bias_attr=False)
+            ...         self.w1 = paddle.nn.Linear(4096, 1024, bias_attr=False)
+            ...     def forward(self, x):
+            ...         y = self.w0(x)
+            ...         z = recompute(self.w1, y, use_reentrant=True)
+            ...         return z
 
-            >>> cuda_state = paddle.get_cuda_rng_state()
-            >>> # without recompute
-            >>> loss_ref, param_ref, grad_ref = run_model(
-            ...     cuda_state, recompute_block=[]
-            ... )
+            >>> # Initialize the model and optimizer
+            >>> with paddle.LazyGuard():
+            ...     model = MlpModel()
+            >>> opt = paddle.optimizer.AdamW(learning_rate=0.001, parameters=model.parameters())
 
-            >>> loss, param, grad = run_model(cuda_state, recompute_block=[1, 2])
-            >>> print("normal_loss: {}, recompute_loss: {}".format(loss_ref, loss))
-            >>> # The result of the recompute_loss should be the same as the normal_loss.
-            normal_loss: [0.0018744759727269411, 0.0, 0.035971127450466156, 0.0, 0.0], recompute_loss: [0.0018744759727269411, 0.0, 0.035971127450466156, 0.0, 0.0]
+            >>> # Configure distributed strategy
+            >>> parallel_config = {
+            ...     "dp_config": {'sharding_level': 1},
+            ...     "mp_config": {"parallelize_plan": {"w0": dist.ColWiseParallel(), "w1": dist.RowWiseParallel()}},
+            ... }
+            >>> dist_model, dist_opt = dist.parallelize(model, opt, config=parallel_config)
+            >>> for p in dist_model.parameters():
+            ...     p.initialize()
+
+            >>> # Prepare the dataset and dataloader
+            >>> dataset = RandomDataset(128, 1024)
+            >>> sampler = BatchSampler(dataset, batch_size=4)
+            >>> dataloader = DataLoader(dataset, batch_sampler=sampler)
+            >>> dataloader = dist.shard_dataloader(dataloader, meshes=[mesh], shard_dims="dp")
+
+            >>> # Convert to static graph and enable recompute
+            >>> loss_fn = nn.MSELoss()
+            >>> dist_strategy = dist.Strategy()
+            >>> dist_strategy._recompute.enable = True
+            >>> dist_model = dist.to_static(dist_model, dataloader, loss_fn, opt, strategy=dist_strategy)
+            >>> dist_model.train()
+
+            >>> # Training loop
+            >>> for step, (inputs, labels) in enumerate(dataloader()):
+            ...     loss = dist_model(inputs, labels)
+            ...     print('step: ', step, ' loss: ', loss)
 
     """
 
