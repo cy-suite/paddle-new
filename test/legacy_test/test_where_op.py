@@ -893,6 +893,50 @@ class TestWhereDygraphAPIDtypePromotion(unittest.TestCase):
                 out.numpy(), np.where(cond_i, x_i, y_i)
             )
 
+    def test_dtype_auto_promotion_float_scalar_tensor_fp32(self):
+        with base.dygraph.guard():
+            x_i = np.random.randn(4, 5, 6).astype('float32')
+            y_i = float(np.random.randn())
+            cond_i = np.random.randn(4, 5, 6).astype('bool')
+            x = paddle.to_tensor(x_i)
+            cond = paddle.to_tensor(cond_i)
+            out = paddle.where(cond, x, y_i)
+            self.assertEqual(out.dtype, x.dtype)
+            np.testing.assert_array_equal(
+                out.numpy(), np.where(cond_i, x_i, y_i)
+            )
+
+    def test_dtype_auto_promotion_float_scalar_tensor_fp64(self):
+        with base.dygraph.guard():
+            x_i = np.random.randn(4, 5, 6).astype('float64')
+            y_i = float(np.random.randn())
+            cond_i = np.random.randn(4, 5, 6).astype('bool')
+            x = paddle.to_tensor(x_i)
+            cond = paddle.to_tensor(cond_i)
+            out = paddle.where(cond, x, y_i)
+            self.assertEqual(out.dtype, x.dtype)
+            np.testing.assert_array_equal(
+                out.numpy(), np.where(cond_i, x_i, y_i)
+            )
+
+    @unittest.skipIf(
+        not core.is_compiled_with_cuda()
+        or not core.is_float16_supported(core.CUDAPlace(0)),
+        "core is not compiled with CUDA and not support the bfloat16",
+    )
+    def test_dtype_auto_promotion_float_scalar_tensor_fp16(self):
+        with base.dygraph.guard():
+            x_i = np.random.randn(4, 5, 6).astype('float16')
+            y_i = float(np.random.randn())
+            cond_i = np.random.randn(4, 5, 6).astype('bool')
+            x = paddle.to_tensor(x_i)
+            cond = paddle.to_tensor(cond_i)
+            out = paddle.where(cond, x, y_i)
+            self.assertEqual(out.dtype, x.dtype)
+            np.testing.assert_array_equal(
+                out.numpy(), np.where(cond_i, x_i, y_i)
+            )
+
 
 class TestWhereOpError(unittest.TestCase):
     def test_errors(self):

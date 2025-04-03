@@ -787,17 +787,71 @@ def where(
             [[2],
              [3]]),)
     """
-    if np.isscalar(x):
-        x = paddle.full([1], x, np.array([x]).dtype.name)
-
-    if np.isscalar(y):
-        y = paddle.full([1], y, np.array([y]).dtype.name)
-
     if x is None and y is None:
         return nonzero(condition, as_tuple=True)
 
     if x is None or y is None:
         raise ValueError("either both or neither of x and y should be given")
+
+    # convert builtin scalar to Tensor
+    isscalar_x = np.isscalar(x)
+    isscalar_y = np.isscalar(y)
+    default_dtype = paddle.get_default_dtype()
+    if isscalar_x and isscalar_y:
+        assert not isinstance(
+            x, complex
+        ), "Complex input x is not supported yet"
+        assert not isinstance(
+            y, complex
+        ), "Complex input y is not supported yet"
+        x_ = x
+        y_ = y
+        x: Tensor = paddle.full(
+            [1],
+            x_,
+            np.array([x_ if isinstance(x_, float) else y_]).dtype.name.replace(
+                "float64", default_dtype
+            ),
+        )
+        y: Tensor = paddle.full(
+            [1],
+            y_,
+            np.array([y_ if isinstance(y_, float) else x_]).dtype.name.replace(
+                "float64", default_dtype
+            ),
+        )
+    elif isscalar_x:
+        assert not isinstance(
+            x, complex
+        ), "Complex input x is not supported yet"
+        x: Tensor = paddle.full(
+            [1],
+            x,
+            (
+                np.array([x]).dtype.name.replace("float64", default_dtype)
+                if isinstance(x, float) and paddle.is_integer(y)
+                else y.dtype
+            ),
+        )
+    elif isscalar_y:
+        assert not isinstance(
+            y, complex
+        ), "Complex input y is not supported yet"
+        y: Tensor = paddle.full(
+            [1],
+            y,
+            (
+                np.array([y]).dtype.name.replace("float64", default_dtype)
+                if isinstance(y, float) and paddle.is_integer(x)
+                else x.dtype
+            ),
+        )
+
+    # convert dtype to float if necessary
+    if paddle.is_integer(x) and not paddle.is_integer(y):
+        x = x.astype(y.dtype)
+    elif paddle.is_integer(y) and not paddle.is_integer(x):
+        y = y.astype(x.dtype)
 
     # NOTE: We might need to adapt the broadcast_shape and broadcast_to for dynamic shape
     # so dynamic and pir branch can be merged into one code block
