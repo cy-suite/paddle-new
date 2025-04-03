@@ -14,6 +14,7 @@
 
 import copy
 
+import paddle.distributed as dist
 from paddle.distributed.auto_parallel.static.cost.comm_op_cost import (
     AllreduceSumOpCost,
     IdentityOpCost,
@@ -438,22 +439,21 @@ def _right_operand_parameter_matmul_backward(ctx, *args, **kwargs):
             rank_id,
         )
         group = new_process_group(group_ranks)
-        c_allreduce_sum_op = main_block.append_op(
-            type='c_allreduce_sum',
-            inputs={'X': kwargs['X@GRAD']},
-            outputs={'Out': kwargs['X@GRAD']},
+        all_reduce_sum_op = main_block.append_op(
+            type='all_reduce',
+            inputs={'x': kwargs['X@GRAD']},
+            outputs={'out': kwargs['X@GRAD']},
             attrs={
                 'ring_id': group.id,
-                'use_calc_stream': True,
-                'use_model_parallel': True,
+                'op_type': dist.ReduceOp.SUM,
                 OP_ROLE_KEY: OpRole.Backward,
             },
         )
-        c_allreduce_sum_op._set_attr(
+        all_reduce_sum_op._set_attr(
             'op_namescope', '/' + ParallelMode.TensorParallel
         )
         set_comm_op_dist_attr_for_program(
-            c_allreduce_sum_op,
+            all_reduce_sum_op,
             dist_attr.process_mesh,
             X_grad_dist_attr,
             ctx,
@@ -645,8 +645,8 @@ class DistributedMatmulImpl0(DistributedOperatorImpl):
         if has_x_grad:
             attrs = {"use_calc_stream": True, "use_model_parallel": True}
             var_names = backward_op.output("X@GRAD")
-            c_allreduce_sum_desc_mapping = build_comm_desc_from_dist_op(
-                "c_allreduce_sum",
+            all_reduce_sum_desc_mapping = build_comm_desc_from_dist_op(
+                "all_reduce",
                 dist_op,
                 ctx,
                 var_names,
@@ -657,7 +657,7 @@ class DistributedMatmulImpl0(DistributedOperatorImpl):
                 AllreduceSumOpCost,
                 ctx,
                 processes,
-                c_allreduce_sum_desc_mapping,
+                all_reduce_sum_desc_mapping,
                 cluster,
             )
             res.append(comm_op_cost_list)
@@ -946,8 +946,8 @@ class DistributedMatmulImpl1(DistributedOperatorImpl):
         attrs = {"use_calc_stream": True, "use_model_parallel": True}
 
         var_names = serial_op.output("Out")
-        c_allreduce_sum_desc_mapping = build_comm_desc_from_dist_op(
-            "c_allreduce_sum",
+        all_reduce_sum_desc_mapping = build_comm_desc_from_dist_op(
+            "all_reduce",
             dist_op,
             ctx,
             var_names,
@@ -959,7 +959,7 @@ class DistributedMatmulImpl1(DistributedOperatorImpl):
             AllreduceSumOpCost,
             ctx,
             processes,
-            c_allreduce_sum_desc_mapping,
+            all_reduce_sum_desc_mapping,
             cluster,
         )
 
@@ -1092,22 +1092,21 @@ class DistributedMatmulImpl1(DistributedOperatorImpl):
         matmul_op = copy_op_without_infer_shape(src_op, main_block, ctx, kwargs)
 
         # add allreduce (inplace)
-        c_allreduce_sum_op = main_block.append_op(
-            type='c_allreduce_sum',
-            inputs={'X': Out_var},
-            outputs={'Out': Out_var},
+        all_reduce_sum_op = main_block.append_op(
+            type='all_reduce',
+            inputs={'x': Out_var},
+            outputs={'out': Out_var},
             attrs={
                 'ring_id': group.id,
-                'use_calc_stream': True,
-                'use_model_parallel': True,
+                'op_type': dist.ReduceOp.SUM,
                 OP_ROLE_KEY: src_op.attr('op_role'),
             },
         )
-        c_allreduce_sum_op._set_attr(
+        all_reduce_sum_op._set_attr(
             'op_namescope', '/' + ParallelMode.TensorParallel
         )
         set_comm_op_dist_attr_for_program(
-            c_allreduce_sum_op,
+            all_reduce_sum_op,
             op_dist_attr.process_mesh,
             out_var_dist_attr,
             ctx,
@@ -1336,8 +1335,8 @@ class DistributedMatmulV2Impl0(DistributedOperatorImpl):
         if has_x_grad:
             attrs = {"use_calc_stream": True, "use_model_parallel": True}
             var_names = backward_op.output("X@GRAD")
-            c_allreduce_sum_desc_mapping = build_comm_desc_from_dist_op(
-                "c_allreduce_sum",
+            all_reduce_sum_desc_mapping = build_comm_desc_from_dist_op(
+                "all_reduce",
                 dist_op,
                 ctx,
                 var_names,
@@ -1348,7 +1347,7 @@ class DistributedMatmulV2Impl0(DistributedOperatorImpl):
                 AllreduceSumOpCost,
                 ctx,
                 processes,
-                c_allreduce_sum_desc_mapping,
+                all_reduce_sum_desc_mapping,
                 cluster,
             )
             res.append(comm_op_cost_list)
@@ -1634,8 +1633,8 @@ class DistributedMatmulV2Impl1(DistributedOperatorImpl):
         attrs = {"use_calc_stream": True, "use_model_parallel": True}
 
         var_names = serial_op.output("Out")
-        c_allreduce_sum_desc_mapping = build_comm_desc_from_dist_op(
-            "c_allreduce_sum",
+        all_reduce_sum_desc_mapping = build_comm_desc_from_dist_op(
+            "all_reduce",
             dist_op,
             ctx,
             var_names,
@@ -1647,7 +1646,7 @@ class DistributedMatmulV2Impl1(DistributedOperatorImpl):
             AllreduceSumOpCost,
             ctx,
             processes,
-            c_allreduce_sum_desc_mapping,
+            all_reduce_sum_desc_mapping,
             cluster,
         )
         res_cost = [cost_mapping, comm_op_cost_list]
@@ -1780,22 +1779,21 @@ class DistributedMatmulV2Impl1(DistributedOperatorImpl):
             src_op, main_block, ctx, kwargs
         )
 
-        c_allreduce_sum_op = main_block.append_op(
-            type='c_allreduce_sum',
-            inputs={'X': Out_var},
-            outputs={'Out': Out_var},
+        all_reduce_sum_op = main_block.append_op(
+            type='all_reduce',
+            inputs={'x': Out_var},
+            outputs={'out': Out_var},
             attrs={
                 'ring_id': group.id,
-                'use_calc_stream': True,
-                'use_model_parallel': True,
+                'op_type': dist.ReduceOp.SUM,
                 OP_ROLE_KEY: src_op.attr('op_role'),
             },
         )
-        c_allreduce_sum_op._set_attr(
+        all_reduce_sum_op._set_attr(
             'op_namescope', '/' + ParallelMode.TensorParallel
         )
         set_comm_op_dist_attr_for_program(
-            c_allreduce_sum_op,
+            all_reduce_sum_op,
             op_dist_attr.process_mesh,
             out_var_dist_attr,
             ctx,
@@ -2023,8 +2021,8 @@ class DistributedMulImpl0(DistributedOperatorImpl):
         if has_x_grad:
             attrs = {"use_calc_stream": True, "use_model_parallel": True}
             var_names = backward_op.output("X@GRAD")
-            c_allreduce_sum_desc_mapping = build_comm_desc_from_dist_op(
-                "c_allreduce_sum",
+            all_reduce_sum_desc_mapping = build_comm_desc_from_dist_op(
+                "all_reduce",
                 dist_op,
                 ctx,
                 var_names,
@@ -2035,7 +2033,7 @@ class DistributedMulImpl0(DistributedOperatorImpl):
                 AllreduceSumOpCost,
                 ctx,
                 processes,
-                c_allreduce_sum_desc_mapping,
+                all_reduce_sum_desc_mapping,
                 cluster,
             )
             res.append(comm_op_cost_list)
@@ -2312,8 +2310,8 @@ class DistributedMulImpl1(DistributedOperatorImpl):
         attrs = {"use_calc_stream": True, "use_model_parallel": True}
 
         var_names = serial_op.output("Out")
-        c_allreduce_sum_desc_mapping = build_comm_desc_from_dist_op(
-            "c_allreduce_sum",
+        all_reduce_sum_desc_mapping = build_comm_desc_from_dist_op(
+            "all_reduce",
             dist_op,
             ctx,
             var_names,
@@ -2325,7 +2323,7 @@ class DistributedMulImpl1(DistributedOperatorImpl):
             AllreduceSumOpCost,
             ctx,
             processes,
-            c_allreduce_sum_desc_mapping,
+            all_reduce_sum_desc_mapping,
             cluster,
         )
 
@@ -2446,22 +2444,21 @@ class DistributedMulImpl1(DistributedOperatorImpl):
         # copy op
         mul_op = copy_op_without_infer_shape(src_op, main_block, ctx, kwargs)
 
-        c_allreduce_sum_op = main_block.append_op(
-            type='c_allreduce_sum',
-            inputs={'X': Out_var},
-            outputs={'Out': Out_var},
+        all_reduce_sum_op = main_block.append_op(
+            type='all_reduce',
+            inputs={'x': Out_var},
+            outputs={'out': Out_var},
             attrs={
                 'ring_id': group.id,
-                'use_calc_stream': True,
-                'use_model_parallel': True,
+                'op_type': dist.ReduceOp.SUM,
                 OP_ROLE_KEY: src_op.attr('op_role'),
             },
         )
-        c_allreduce_sum_op._set_attr(
+        all_reduce_sum_op._set_attr(
             'op_namescope', '/' + ParallelMode.TensorParallel
         )
         set_comm_op_dist_attr_for_program(
-            c_allreduce_sum_op,
+            all_reduce_sum_op,
             op_dist_attr.process_mesh,
             out_var_dist_attr,
             ctx,
