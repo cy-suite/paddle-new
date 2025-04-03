@@ -181,7 +181,7 @@ class IdentityOpCost(CommOpCost):
 
 @register_op_cost
 class RecvOpCost(CommOpCost):
-    OP_TYPE = "recv_v2"
+    OP_TYPE = "p_recv"
 
     def __init__(self, op=None, op_desc=None, comm_context=None):
         super().__init__(op=op, op_desc=op_desc, comm_context=comm_context)

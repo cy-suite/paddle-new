@@ -163,7 +163,7 @@ def check_send_recv_result(dist_main_prog, rank_id):
             if op.type == "send_v2" and "gelu_0.tmp_0" in op.input_arg_names:
                 send_result = True
             if (
-                op.type == "recv_v2"
+                op.type == "p_recv"
                 and "gelu_0.tmp_0@GRAD" in op.output_arg_names[0]
             ):
                 recv_result = True
@@ -174,10 +174,7 @@ def check_send_recv_result(dist_main_prog, rank_id):
                 and "gelu_0.tmp_0@GRAD" in op.input_arg_names
             ):
                 send_result = True
-            if (
-                op.type == "recv_v2"
-                and "gelu_0.tmp_0" in op.output_arg_names[0]
-            ):
+            if op.type == "p_recv" and "gelu_0.tmp_0" in op.output_arg_names[0]:
                 recv_result = True
 
     return send_result and recv_result

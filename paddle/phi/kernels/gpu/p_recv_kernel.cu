@@ -59,6 +59,18 @@ void PRecvKernel(const Context& dev_ctx,
 }
 
 template <typename T, typename Context>
+void PRecv2Kernel(const Context& dev_ctx UNUSED,
+                  int ring_id UNUSED,
+                  bool dynamic_shape UNUSED,
+                  int peer UNUSED,
+                  const std::vector<int>& out_shape UNUSED,
+                  DataType dtype UNUSED,
+                  bool use_calc_stream UNUSED,
+                  DenseTensor* out UNUSED) {
+  PRecvKernel<T, Context>(dev_ctx, peer, dtype, out_shape, dynamic_shape, out);
+}
+
+template <typename T, typename Context>
 void PRecvArrayKernel(const Context& dev_ctx,
                       int peer,
                       DataType dtype,
@@ -103,6 +115,20 @@ PD_REGISTER_KERNEL(p_recv,
                    int64_t,
                    phi::dtype::bfloat16,
                    phi::dtype::float16) {}
+PD_REGISTER_KERNEL(p_recv2,
+                   GPU,
+                   ALL_LAYOUT,
+                   phi::PRecv2Kernel,
+                   float,
+                   double,
+                   int,
+                   bool,
+                   int8_t,
+                   uint8_t,
+                   int16_t,
+                   int64_t,
+                   phi::dtype::bfloat16,
+                   phi::dtype::float16) {}
 
 PD_REGISTER_KERNEL(p_recv_array,
                    GPU,
@@ -122,6 +148,19 @@ PD_REGISTER_KERNEL(p_recv,
                    GPU,
                    ALL_LAYOUT,
                    phi::PRecvKernel,
+                   float,
+                   double,
+                   int,
+                   bool,
+                   int8_t,
+                   uint8_t,
+                   int16_t,
+                   int64_t,
+                   phi::dtype::float16) {}
+PD_REGISTER_KERNEL(p_recv2,
+                   GPU,
+                   ALL_LAYOUT,
+                   phi::PRecv2Kernel,
                    float,
                    double,
                    int,

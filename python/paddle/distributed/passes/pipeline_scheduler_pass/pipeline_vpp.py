@@ -556,7 +556,7 @@ class PipelineVirtualPipelinePass(PipelinePassBase):
                 else:
                     job_type = "backward"
             elif op_role == int(OpRole.Forward):
-                if op.name() == "pd_op.recv_v2" and (not split_bw):
+                if op.name() == "pd_op.p_recv" and (not split_bw):
                     job_type = "recv_forward"
                 else:
                     job_type = "forward"

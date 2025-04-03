@@ -637,7 +637,7 @@ class HybridParallelInferenceHelper:
 
                     block._insert_op_without_sync(
                         index=index + extra_index_info['index'],
-                        type='recv_v2',
+                        type='p_recv',
                         outputs={'Out': [var]},
                         attrs={
                             'out_shape': var_shape,
@@ -737,7 +737,7 @@ class HybridParallelInferenceHelper:
                         )
                     block._insert_op_without_sync(
                         index=index,
-                        type='recv_v2',
+                        type='p_recv',
                         outputs={'Out': [var]},
                         attrs={
                             'out_shape': var_shape,

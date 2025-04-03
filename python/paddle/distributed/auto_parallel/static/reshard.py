@@ -387,7 +387,7 @@ class Inserter:
     @staticmethod
     def insert_recv_op(block, idx, tensor, src, dst, op_role, sync=True):
         """Insert recv op into block at the given index."""
-        op_type = 'recv_v2'
+        op_type = 'p_recv'
         insert_operation = (
             block._insert_op if sync else block._insert_op_without_sync
         )
