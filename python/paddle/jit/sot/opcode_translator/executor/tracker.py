@@ -136,9 +136,11 @@ class SymbolicOperationTracker(Tracker):
         self.method_name = method_name
 
     def gen_instructions(self, codegen: PyCodeGen):
+        # TODO(zrr1999): implemented in #68555
         raise InnerError("SymbolicOperationTracker has no instructions")
 
     def trace_value_from_frame(self):
+        # TODO(zrr1999): implemented in #68555
         raise InnerError(
             "SymbolicOperationTracker can't trace value from frame"
         )
@@ -147,11 +149,11 @@ class SymbolicOperationTracker(Tracker):
         return f"SymbolicOperationTracker(num_inputs={len(self.inputs)})"
 
     def is_traceable(self):
-        # TODO(zrr1999): to implement gen_instructions and trace_value_from_frame
+        # TODO(zrr1999): implemented in #68555
         return False
 
     def need_guard(self) -> bool:
-        # TODO(zrr1999): to implement gen_instructions and trace_value_from_frame
+        # TODO(zrr1999): implemented in #68555
         return False
 
 

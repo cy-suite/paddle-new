@@ -395,6 +395,7 @@ class OpcodeExecutorBase:
         self._graph = graph
         self.new_code: types.CodeType | None = self.empty_code  # type: ignore
         self.guard_fn = None
+        self.guard_nodes = None
         self._name = "Executor"
         self._call_shape: tuple[str, ...] | None = (
             None  # store kwnames for Python 3.11 and 3.12
@@ -2019,6 +2020,7 @@ class OpcodeExecutor(OpcodeExecutorBase):
             self._graph.pycode_gen.gen_return()
             self.new_code = self._graph.pycode_gen.gen_pycode()
         self.guard_fn = self._graph.guard_fn
+        self.guard_nodes = self._graph.guard_nodes
         return Stop(state="Return")
 
     def get_compute_fn_and_update_changed_vars(
@@ -2213,6 +2215,7 @@ class OpcodeExecutor(OpcodeExecutorBase):
 
         self.new_code = self._graph.pycode_gen.gen_pycode()
         self.guard_fn = self._graph.guard_fn
+        self.guard_nodes = self._graph.guard_nodes
 
     @fallback_when_occur_error
     def _break_graph_when_call(
@@ -2325,6 +2328,7 @@ class OpcodeExecutor(OpcodeExecutorBase):
         self._graph.pycode_gen.gen_return()
         self.new_code = self._graph.pycode_gen.gen_pycode()
         self.guard_fn = self._graph.guard_fn
+        self.guard_nodes = self._graph.guard_nodes
 
     @fallback_when_occur_error
     def _break_graph_when_for_loop(
@@ -2573,6 +2577,7 @@ class OpcodeExecutor(OpcodeExecutorBase):
 
         self.new_code = self._graph.pycode_gen.gen_pycode()
         self.guard_fn = self._graph.guard_fn
+        self.guard_nodes = self._graph.guard_nodes
 
     def _inline_call_for_loop(
         self, iterator: VariableBase, for_iter: Instruction

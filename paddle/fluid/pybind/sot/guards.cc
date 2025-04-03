@@ -166,6 +166,8 @@ bool NumPyArrayValueMatchGuard::check(PyObject* value) {
 
 PyObject* ConstantExprNode::eval(FrameProxy* frame) { return value_ptr_; }
 
+PyObject* ExternVarExprNode::eval(FrameProxy* frame) { return value_ptr_; }
+
 PyObject* LocalVarExprNode::eval(FrameProxy* frame) {
 #if PY_3_13_PLUS
   return PyDict_GetItemString(frame->locals, var_name_.c_str());
@@ -193,6 +195,8 @@ PyObject* ItemExprNode::eval(FrameProxy* frame) {
 }
 
 std::optional<int> GuardNode::lookup(FrameProxy* frame) {
+  // TODO(zrr1999): support multiple exprs
+  auto expr = exprs.back();
   auto value = expr->eval(frame);
   if (guard->check(value)) {
     if (return_cache_index.has_value()) {
