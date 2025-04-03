@@ -2890,7 +2890,11 @@ void MarginCrossEntropyInferMeta(const MetaTensor& logits,
 void MaskedSelectInferMeta(const MetaTensor& x,
                            const MetaTensor& mask,
                            MetaTensor* out) {
-  out->set_dims({-1});  // can not infer
+  if (x.numel() == 0 || mask.numel() == 0) {
+    out->set_dims({0});
+  } else {
+    out->set_dims({-1});  // can not infer
+  }
   out->set_dtype(x.dtype());
 }
 
