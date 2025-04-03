@@ -55,10 +55,16 @@ class AutoParallelSyncSharedParamsPass(PassBase):
     def _check_conflict(self, other_pass):
         return True
 
-    def _find_fist_opt_user(self, main_program):
-        for op in main_program.global_block().ops:
-            if op.op_role == 2:
-                return op
+    def _find_fist_opt_user(self, kwags_value):
+        first_opt_user = None
+        for user in kwags_value.all_used_ops():
+            if user.op_role != 2:
+                continue
+            if first_opt_user is None:
+                first_opt_user = user
+            elif user.id() < first_opt_user.id():
+                first_opt_user = user
+        return first_opt_user
 
     def _get_comm_group(self, ranks=[]):
         ranks = sorted(ranks)
@@ -71,6 +77,15 @@ class AutoParallelSyncSharedParamsPass(PassBase):
         group = new_process_group(ranks, force_new_group=True)
         self.comm_group[tuple(ranks)] = group.id
         return group.id
+
+    def _find_kwargs(self, main_program, param_name):
+        for kwags, value in main_program.global_block().kwargs().items():
+            if param_name in kwags:
+                return value
+        AssertionError(
+            "The parameter {param_name} was not found in the program kwargs"
+        )
+        return
 
     def sync_shared_parameters(self, main_program, startup_program):
         if not self._check_self():
@@ -215,18 +230,16 @@ class AutoParallelSyncSharedParamsPass(PassBase):
 
         return new_shared_params
 
-    def sync_shared_parameter_gradient(
-        self, main_program, startup_program, params_grads
-    ):
+    def sync_shared_parameter_gradient(self, main_program, startup_program):
         if not self._check_self():
             logger.info(
                 "AutoParallelSyncSharedParamsPass need support pipeline parallel, skip pass."
             )
-            return params_grads
+            return
 
         if len(self.params_maybe_shared) == 0:
             logger.info("No parameter need to share, skip pass.")
-            return params_grads
+            return
 
         # Only support one shared parameter.
         # TODO: support more shared parameters
@@ -237,7 +250,7 @@ class AutoParallelSyncSharedParamsPass(PassBase):
         cur_rank = paddle.distributed.get_rank()
 
         if cur_rank not in self.src_ranks and cur_rank not in self.dst_ranks:
-            return params_grads
+            return
 
         pre_name = ""
         if cur_rank in self.dst_ranks:
@@ -249,17 +262,7 @@ class AutoParallelSyncSharedParamsPass(PassBase):
             dst_mesh_ids = param_mess['dst_mesh'].process_ids
 
             # Get (param, grad) value
-            param_value = main_program.get_parameter_value_by_name(param_name)
-
-            grad_idx = None
-            for p_idx, (p_param, _) in enumerate(params_grads):
-                if p_param.is_same(param_value):
-                    grad_idx = p_idx
-                    break
-            assert (
-                grad_idx is not None
-            ), f"Parameter {param_name} not found in params_grades, unable to find corresponding gradient value."
-            grad_value = params_grads[p_idx][1]
+            kwags_value = self._find_kwargs(main_program, param_name)
 
             # Create allreduce op comm group.
             cur_rank = paddle.distributed.get_rank()
@@ -272,31 +275,18 @@ class AutoParallelSyncSharedParamsPass(PassBase):
             ar_group_id = self._get_comm_group([cur_rank, peer_rank])
 
             # Insert allreduce op in the end of backward.
-            insert_pos = self._find_fist_opt_user(main_program)
+            insert_pos = self._find_fist_opt_user(kwags_value)
             paddle.pir.set_insertion_point(insert_pos)
 
             # Build allreduce op to sync gradient.
-            with auto_complete_op_role(main_program, OpRole.Backward):
-                allreduce_val = paddle._C_ops.all_reduce(
-                    grad_value,
+            with auto_complete_op_role(main_program, OpRole.Optimize):
+                allreduce_val = paddle._C_ops.all_reduce_(
+                    kwags_value,
                     ar_group_id,
                     dist.ReduceOp.SUM,
                 )
-                allreduce_val.update_dist_attr(grad_value.dist_attr())
-            allreduce_op = allreduce_val.get_defining_op()
-
-            # Update all_used_ops
-            for user in grad_value.all_used_ops():
-                if user.name() == "pd_op.all_reduce":
-                    continue
-                for idx, operand in enumerate(user.operands()):
-                    if user.operand_source(idx).is_same(grad_value):
-                        user.operand(idx).set_source(allreduce_val)
-
-            # Update (param, grad) value
-            params_grads[p_idx] = (param_value, allreduce_val)
-
-        return params_grads
+                allreduce_val.update_dist_attr(kwags_value.dist_attr())
+        return
 
     def _apply_single_impl(self, main_program, startup_program, context):
         return

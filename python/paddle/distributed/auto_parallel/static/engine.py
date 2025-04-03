@@ -888,11 +888,6 @@ class Engine:
 
         RemovePasses.apply_all(dist_program, startup_program, params_grads)
 
-        if self._strategy.pipeline.auto_parallel_sync_shared_params:
-            global_params_grads = auto_parallel_sync_shared_params_pass.sync_shared_parameter_gradient(
-                dist_program, startup_program, global_params_grads
-            )
-
         # Part 4: Optimization Pass
         # NOTE Only those Optimization Pass that related to Parallelism (need dist attr) should be placed here and all the Pass should be Optional.
 
@@ -929,6 +924,11 @@ class Engine:
             auto_parallel_gradient_merge_pass.apply(
                 [dist_program], [startup_program]
             )
+
+            if self._strategy.pipeline.auto_parallel_sync_shared_params:
+                auto_parallel_sync_shared_params_pass.sync_shared_parameter_gradient(
+                    dist_program, startup_program
+                )
 
         if (
             self._strategy.pipeline.enable
@@ -1033,6 +1033,8 @@ class Engine:
         self._pir_dense_main_progs[mode] = dense_program
         self._pir_dist_main_progs[mode] = dist_program
         self._pir_dist_startup_progs[mode] = startup_program
+
+        # print("xxx last prog : ", dist_program)
 
     def _prepare_program(self, mode, init_parameters=True):
         if self._in_pir_mode:
