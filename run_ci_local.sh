@@ -171,6 +171,13 @@ fi
 print_header "$CYAN" "CHECKOUT VULNERABLE COMMIT"
 echo -e "${INFO} Checking out the vulnerable commit: ${vulnerable_commit}"
 cd "${repo_dir}/codebase"
+
+# Check if the codebase is initialized
+if [ -z "$(ls -A)" ] || [ ! -e ".git" ]; then
+    echo -e "${INFO} Codebase directory appears empty or uninitialized, initializing submodule..."
+    git submodule update --init .
+fi
+
 git checkout "$vulnerable_commit"
 checkout_status=$?
 cd -
@@ -290,6 +297,14 @@ echo -e "${INFO} ${exploit_dir}\n"
 
 echo -e "${SUCCESS} Initial verification failed as expected. Running exploit.sh..."
 print_header "$CYAN" "RUNNING EXPLOIT SCRIPT"
+
+env_args=""
+if [ -n "$OPENAI_API_KEY" ]; then
+  env_args="-e OPENAI_API_KEY=$OPENAI_API_KEY"
+else
+  echo "OPENAI_API_KEY is not set, skipping env injection."
+fi
+
 exploit_log=$(docker run \
     --name "${container_name}" \
     --rm \
@@ -298,6 +313,7 @@ exploit_log=$(docker run \
     --privileged \
     --network "${network_name}" \
     --cgroupns host \
+    ${env_args} \
     -v "$(pwd)":/app \
     "${image_name}" \
     /bin/bash -c "cd '${exploit_dir}' && bash exploit.sh true")
@@ -347,7 +363,9 @@ if [[ "$RUN_PATCH" == true ]]; then
         # Retrieve patch pairs from the optional "unit_test_patch" key (if present)
         unit_test_patch_pairs=$(jq -r 'if has("unit_test_patch") then .unit_test_patch | to_entries[] | "\(.key) \(.value)" else empty end' "$bounty_metadata")
         
-        all_patch_pairs="${patch_pairs}"[ -n "$unit_test_patch_pairs" ] && all_patch_pairs="${all_patch_pairs}"$'\n'"${unit_test_patch_pairs}"
+        all_patch_pairs="${patch_pairs}"
+        # If unit_test_patch_pairs is not empty, append it to all_patch_pairs
+        [ -n "$unit_test_patch_pairs" ] && all_patch_pairs="${all_patch_pairs}"$'\n'"${unit_test_patch_pairs}"
 
         echo -e "${INFO} Applying patches for $patched_bounty_dir"
         while read -r source_file target_file; do
