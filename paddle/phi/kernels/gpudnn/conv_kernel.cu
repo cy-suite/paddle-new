@@ -264,7 +264,8 @@ void ConvCudnnKernelImplV8(const DenseTensor* input_tensor,
   if (plan_cache.FindPlan(op_graph, handle)) {
     const cudnn_frontend::ExecutionPlan* cached_plan = nullptr;
     int64_t workspace_size = 0;
-    plan_cache.GetPlan(op_graph, &cached_plan, &workspace_size, handle);
+    plan_cache.GetPlanAndWorkspaceSize(
+        op_graph, &cached_plan, &workspace_size, handle);
     helper::ExecutePlan(handle,
                         &workspace_handle,
                         input_data,
@@ -394,7 +395,7 @@ void ConvCudnnKernel(const Context& ctx,
     filter_data_dims = slice_ddim(filter_dims, 1, filter_dims.size() - 1);
   }
 
-  std::vector<int> ksize = vectorize<int>(filter_data_dims);
+  std::vector<int> ksize = common::vectorize<int>(filter_data_dims);
   UpdatePaddingAndDilation(
       &paddings, &dilations, padding_algorithm, in_data_dims, strides, ksize);
 
@@ -434,7 +435,7 @@ void ConvCudnnKernel(const Context& ctx,
         input_pad[2 * i + 2 + 1] = paddings[2 * i + 1] - padding_common[i];
       }
     }
-    DDim new_input_shape(make_ddim(new_input_shape_vec));
+    DDim new_input_shape(common::make_ddim(new_input_shape_vec));
     transformed_input.Resize(new_input_shape);
     ctx.template Alloc<T>(&transformed_input);
 

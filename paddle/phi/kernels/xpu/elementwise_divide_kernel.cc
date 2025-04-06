@@ -44,5 +44,12 @@ void DivideKernel(const Context& dev_ctx,
 
 }  // namespace phi
 
-PD_REGISTER_KERNEL(
-    divide, XPU, ALL_LAYOUT, phi::DivideKernel, phi::dtype::float16, float) {}
+PD_REGISTER_KERNEL(divide,
+                   XPU,
+                   ALL_LAYOUT,
+                   phi::DivideKernel,
+                   float,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16,
+                   int,
+                   int64_t) {}

@@ -23,7 +23,6 @@ using dnnl::engine;
 using dnnl::inner_product_forward;
 using dnnl::memory;
 using dnnl::prop_kind;
-using dnnl::stream;
 using phi::ReshapeToMatrix;
 
 namespace phi {
@@ -35,7 +34,7 @@ KernelKey MatmulGetkernelTypeForVar(const GetKernelTypeForVarContext *ctx) {
     // only promote inputs’s types when contains complex input
     return phi::KernelKey(tensor.place(), tensor.layout(), tensor.dtype());
   } else {
-#ifdef PADDLE_WITH_MKLDNN
+#ifdef PADDLE_WITH_DNNL
     // When matmul_v2 is first oneDNN op in a chain (there was some non oneDNN
     // op previously) then we also need to rotate shape NHWC -> NCWH
     if ((expected_kernel_type.layout() == phi::DataLayout::ONEDNN) &&
@@ -78,7 +77,7 @@ void CalculateMatrixDims(const std::vector<int64_t> &x_dims,
   }
 
   if (x_dims.size() > 2 && y_dims.size() > 2) {
-    auto out_dims = vectorize(out->dims());
+    auto out_dims = common::vectorize(out->dims());
     for (size_t i = 0; i < (*x_bd_dims).size() - 2; ++i) {
       PADDLE_ENFORCE_EQ(
           (*x_bd_dims)[i] == (*y_bd_dims)[i] || (*x_bd_dims)[i] == 1 ||
@@ -94,7 +93,7 @@ void CalculateMatrixDims(const std::vector<int64_t> &x_dims,
               (*y_bd_dims)[i]));
       (out_dims)[i] = std::max((*x_bd_dims)[i], (*y_bd_dims)[i]);
     }
-    out->Resize(make_ddim((out_dims)));
+    out->Resize(common::make_ddim((out_dims)));
   }
 }
 
@@ -124,8 +123,8 @@ void MatmulKernel(const Context &dev_ctx,
           ? PADDLE_GET_CONST(bool, dev_ctx.GetDnnAttr("force_fp32_output"))
           : false;
 
-  auto x_dims = vectorize(x.dims());
-  auto y_dims = vectorize(y.dims());
+  auto x_dims = common::vectorize(x.dims());
+  auto y_dims = common::vectorize(y.dims());
   int ndims = std::max(x_dims.size(), y_dims.size());
   ndims = std::max(ndims, 3);
 
@@ -375,7 +374,7 @@ class MulPrimitiveFactory {
       const DenseTensor *tensor,
       funcs::OneDNNMemoryFormat format,
       memory::data_type type = funcs::OneDNNGetDataType<T>()) {
-    auto dims = vectorize<int64_t>(tensor->dims());
+    auto dims = common::vectorize<int64_t>(tensor->dims());
     return funcs::OneDNNMemDesc(dims, type, format);
   }
 
@@ -407,7 +406,7 @@ class MulPrimitiveFactory {
   memory Reorder(const memory::desc &src_desc,
                  const memory::desc &dst_desc,
                  void *src_data,
-                 void *dst_data = NULL) {
+                 void *dst_data = nullptr) {
     auto src_mem = memory(src_desc, engine_, src_data);
     auto dst_mem = dst_data ? memory(dst_desc, engine_, dst_data)
                             : memory(dst_desc, engine_);
@@ -424,7 +423,7 @@ class MulPrimitiveFactory {
   }
 
   memory TransposeInputY(const DenseTensor *input_y) {
-    auto dims = vectorize<int64_t>(input_y->dims());
+    auto dims = common::vectorize<int64_t>(input_y->dims());
     std::swap(dims[0], dims[1]);  // Correct output dimensions
     auto src_desc =
         CreateMemDescriptor<YT>(dims, funcs::OneDNNMemoryFormat::io);
@@ -452,9 +451,9 @@ std::shared_ptr<MulPrimitiveFactory<XT, YT, OT>> GetPrimitiveFactory(
     const engine &onednn_engine) {
   std::string key = funcs::CreateKey(dev_ctx,
                                      phi::TransToProtoVarType(input_x->dtype()),
-                                     vectorize(input_x->dims()),
+                                     common::vectorize(input_x->dims()),
                                      phi::TransToProtoVarType(input_y->dtype()),
-                                     vectorize(input_y->dims()),
+                                     common::vectorize(input_y->dims()),
                                      dev_ctx.GetOutputsName("Out")[0]);
   key = funcs::ExtendKeyWithThreadInfoIfNeeded(dev_ctx, key);
 
@@ -528,8 +527,8 @@ void MatmulWithFlattenKernelINT8(const Context &dev_ctx,
       mul.get_primitive_desc(), dnnl_query_dst_md, 0);
   dnnl_memory_desc_t cloned_in_md = nullptr;
   dnnl_memory_desc_clone(&cloned_in_md, in_md);
-  out->set_mem_desc(
-      memory::desc(cloned_in_md).reshape(vectorize<int64_t>(out->dims())));
+  out->set_mem_desc(memory::desc(cloned_in_md)
+                        .reshape(common::vectorize<int64_t>(out->dims())));
 }
 
 template <typename T, typename Context>

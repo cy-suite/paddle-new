@@ -19,8 +19,8 @@
 
 #include <memory>
 
+#include "paddle/common/macros.h"
 #include "paddle/phi/core/distributed/comm_context.h"
-#include "paddle/phi/core/macros.h"
 
 namespace phi {
 class DenseTensor;
@@ -37,10 +37,12 @@ class GlooCommContext final : public CommContext {
                  const phi::DenseTensor& in_tensor,
                  int root,
                  uint32_t tag = 0);
+
   void AllReduce(phi::DenseTensor* out_tensor,
                  const phi::DenseTensor& in_tensor,
                  int reduce_type,
                  uint32_t tag = 0);
+
   void Reduce(phi::DenseTensor* out_tensor,
               const phi::DenseTensor& in_tensor,
               int reduce_type,

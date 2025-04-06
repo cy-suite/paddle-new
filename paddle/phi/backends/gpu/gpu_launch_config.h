@@ -34,13 +34,8 @@
 #include "paddle/phi/backends/gpu/gpu_context.h"
 #include "paddle/phi/core/enforce.h"
 
-#ifdef __HIPCC__
-// HIP results in error or nan if > 256
-#define PREDEFINED_BLOCK_SIZE 256
-#else
 // CUDA performs better when thread_per_block is between [64, 512]
 #define PREDEFINED_BLOCK_SIZE 512
-#endif
 
 namespace phi {
 namespace backends {
@@ -69,11 +64,7 @@ inline int64_t RoundToNextHighPowOfTwo(int64_t n, int64_t min_val = 1) {
 inline int64_t RoundToPowerOfTwo(int64_t n) {
   constexpr int64_t min_val = 32;
   int64_t num = RoundToNextHighPowOfTwo(n, min_val);
-#ifdef __HIPCC__
-  int64_t max_val = 256;
-#else
   int64_t max_val = 1024;
-#endif
   return std::min(max_val, num);
 }
 
@@ -142,11 +133,11 @@ inline GpuLaunchConfig GetGpuLaunchConfig1D(const phi::GPUContext& context,
   int64_t active_threads_num = numel / vec_size;
   if (active_threads_num / (sm_count << 1) < limit_threads) {
     // Round up threads number into an exponential multiple of 2, while number
-    // of acitve blocks is about twice of SM, to acquire better performance.
+    // of active blocks is about twice of SM, to acquire better performance.
     threads = RoundToPowerOfTwo(active_threads_num / (sm_count << 1));
   } else if (active_threads_num / (sm_count << 2) < limit_threads) {
     // Round up threads number into an exponential multiple of 2, while number
-    // of acitve blocks is about 4 times of SM, to acquire better performance.
+    // of active blocks is about 4 times of SM, to acquire better performance.
     threads = RoundToPowerOfTwo(active_threads_num / (sm_count << 2));
   }
   // Number of threads per block shall be larger than 64.

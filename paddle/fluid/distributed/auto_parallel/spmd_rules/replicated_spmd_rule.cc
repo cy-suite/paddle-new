@@ -18,8 +18,6 @@ namespace paddle {
 namespace distributed {
 namespace auto_parallel {
 
-using phi::distributed::auto_parallel::str_join;
-
 std::pair<std::vector<TensorDistAttr>, std::vector<TensorDistAttr>>
 ReplicatedSPMDRule::InferForward(const std::vector<DistTensorSpec>& input_specs,
                                  const paddle::framework::AttributeMap& attrs) {
@@ -32,7 +30,7 @@ ReplicatedSPMDRule::InferForward(const std::vector<DistTensorSpec>& input_specs,
   }
 
   // TODO(ljz): we need to know num of output and size of each output before
-  // generate the excat replicasted dist tensor attr for the current op.
+  // generate the excat replicated dist tensor attr for the current op.
   // here we just assume that only one output tensor and has the same size as
   // the first input tensor.
   return {intput_dist_attrs, {ReplicatedOnMesh(input_specs[0].dist_attr())}};

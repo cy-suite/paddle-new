@@ -26,7 +26,7 @@
 #include "paddle/cinn/hlir/pass/use_pass.h"
 #include "paddle/cinn/utils/data_util.h"
 
-DEFINE_string(model_dir, "", "");
+PD_DEFINE_string(model_dir, "", "");
 
 namespace cinn {
 namespace frontend {
@@ -52,7 +52,7 @@ TEST(batch_norm_meta, batch_norm_meta) {
   auto b =
       program.fused_batchnorm_inference(A, Scale, Bias, Mean, Variance, attrs);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -66,7 +66,8 @@ TEST(batch_norm_meta, batch_norm_meta) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -90,7 +91,7 @@ TEST(reduction, reduce) {
   auto c = program.reduce_prod(A, axis, keep_dim);
   auto d = program.reduce_sum(A, {0, 1, 2, 3}, keep_dim);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -104,7 +105,8 @@ TEST(reduction, reduce) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -122,7 +124,7 @@ TEST(Compare, Compare) {
   Program program;
   auto a = program.primitive_equal(A, B);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -136,7 +138,8 @@ TEST(Compare, Compare) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");

@@ -149,6 +149,8 @@ struct Type {
   //! Check if a dtype is supported in CINN yet.
   bool is_supported() const;
 
+  std::string to_string() const;
+
   friend std::ostream& operator<<(std::ostream& os, const Type& t);
 
   ~Type();
@@ -246,6 +248,24 @@ template <>
 inline Type type_of<uint8_t*>() {
   Type x = UInt(8);
   x.set_cpp_handle();
+  return x;
+}
+template <>
+inline Type type_of<int32_t*>() {
+  Type x = Int(32);
+  x.set_cpp_handle();
+  return x;
+}
+template <>
+inline Type type_of<int32_t**>() {
+  Type x = Int(32);
+  x.set_cpp_handle2();
+  return x;
+}
+template <>
+inline Type type_of<int64_t**>() {
+  Type x = Int(64);
+  x.set_cpp_handle2();
   return x;
 }
 template <>

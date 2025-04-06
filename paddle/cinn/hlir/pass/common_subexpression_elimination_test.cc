@@ -37,7 +37,7 @@
 #include "paddle/cinn/hlir/framework/pass.h"
 #include "paddle/cinn/utils/data_util.h"
 
-DEFINE_string(model_dir, "", "");
+PD_DEFINE_string(model_dir, "", "");
 
 namespace cinn {
 namespace frontend {
@@ -59,7 +59,7 @@ TEST(common_subexpression_elimination, common_subexpression_elimination_case1) {
   auto concat = program.concat({t_1, t_2, t_3});
   auto max = program.reduce_max(concat, {0}, true);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -71,7 +71,8 @@ TEST(common_subexpression_elimination, common_subexpression_elimination_case1) {
   hlir::framework::ApplyPass(graph.get(), "BuildNonFusedGroupsPass");
   auto scope = BuildScope(target, graph);
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
   auto& prerun_instrs = runtime_program->GetPreRunInstructions();
   auto& run_instrs = runtime_program->GetRunInstructions();
@@ -103,7 +104,7 @@ TEST(common_subexpression_elimination, common_subexpression_elimination_case2) {
   auto concat_2 = program.concat({reshape_1, reshape_2});
   auto concat_3 = program.concat({reshape_1, reshape_2}, 1);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -115,7 +116,8 @@ TEST(common_subexpression_elimination, common_subexpression_elimination_case2) {
   hlir::framework::ApplyPass(graph.get(), "BuildNonFusedGroupsPass");
   auto scope = BuildScope(target, graph);
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
   auto& prerun_instrs = runtime_program->GetPreRunInstructions();
   auto& run_instrs = runtime_program->GetRunInstructions();
@@ -166,7 +168,7 @@ TEST(common_subexpression_elimination, common_subexpression_elimination_case3) {
   fetch_list.insert(out1->id);
   fetch_list.insert(out2->id);
 
-  Target target = common::DefaultNVGPUTarget();
+  Target target = cinn::common::DefaultNVGPUTarget();
   auto graph =
       std::make_shared<hlir::framework::Graph>(program, fetch_list, target);
   LOG(INFO) << "graph:\n" << graph->DebugGroupedGraph(fetch_list);
@@ -180,7 +182,8 @@ TEST(common_subexpression_elimination, common_subexpression_elimination_case3) {
 
   auto scope = BuildScope(target, graph);
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
   auto& prerun_instrs = runtime_program->GetPreRunInstructions();
   auto& run_instrs = runtime_program->GetRunInstructions();

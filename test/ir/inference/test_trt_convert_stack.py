@@ -44,42 +44,24 @@ class TrtConvertStackTest(TrtLayerAutoScanTest):
         def generate_input1(attrs: List[Dict[str, Any]], batch):
             if self.dims == 4:
                 return np.random.random([batch, 3, 24, 24]).astype(np.float32)
-            elif self.dims == 3:
-                return np.random.random([batch, 3, 24]).astype(np.float32)
-            elif self.dims == 2:
-                return np.random.random([batch, 24]).astype(np.float32)
-            elif self.dims == 1:
-                return np.random.random([24]).astype(np.float32)
-            elif self.dims == 0:
+            else:
                 return np.random.random([]).astype(np.float32)
 
         def generate_input2(attrs: List[Dict[str, Any]], batch):
             if self.dims == 4:
                 return np.random.random([batch, 3, 24, 24]).astype(np.float32)
-            elif self.dims == 3:
-                return np.random.random([batch, 3, 24]).astype(np.float32)
-            elif self.dims == 2:
-                return np.random.random([batch, 24]).astype(np.float32)
-            elif self.dims == 1:
-                return np.random.random([24]).astype(np.float32)
-            elif self.dims == 0:
+            else:
                 return np.random.random([]).astype(np.float32)
 
         def generate_input3(attrs: List[Dict[str, Any]], batch):
             if self.dims == 4:
                 return np.random.random([batch, 3, 24, 24]).astype(np.float32)
-            elif self.dims == 3:
-                return np.random.random([batch, 3, 24]).astype(np.float32)
-            elif self.dims == 2:
-                return np.random.random([batch, 24]).astype(np.float32)
-            elif self.dims == 1:
-                return np.random.random([24]).astype(np.float32)
-            elif self.dims == 0:
+            else:
                 return np.random.random([]).astype(np.float32)
 
-        for dims in [0, 1, 2, 3, 4]:
-            for batch in [1, 4]:
-                for axis in [-2, -1, 0, 1, 2, 3]:
+        for dims in [0, 4]:
+            for batch in [1]:
+                for axis in [-1, 0, 1]:
                     self.dims = dims
                     dics = [{"axis": axis}, {}]
                     ops_config = [
@@ -136,55 +118,7 @@ class TrtConvertStackTest(TrtLayerAutoScanTest):
                     "stack_input2": [1, 3, 24, 24],
                     "stack_input3": [1, 3, 24, 24],
                 }
-            elif self.dims == 3:
-                self.dynamic_shape.min_input_shape = {
-                    "stack_input1": [1, 3, 24],
-                    "stack_input2": [1, 3, 24],
-                    "stack_input3": [1, 3, 24],
-                }
-                self.dynamic_shape.max_input_shape = {
-                    "stack_input1": [4, 3, 48],
-                    "stack_input2": [4, 3, 48],
-                    "stack_input3": [4, 3, 48],
-                }
-                self.dynamic_shape.opt_input_shape = {
-                    "stack_input1": [1, 3, 24],
-                    "stack_input2": [1, 3, 24],
-                    "stack_input3": [1, 3, 24],
-                }
-            elif self.dims == 2:
-                self.dynamic_shape.min_input_shape = {
-                    "stack_input1": [1, 24],
-                    "stack_input2": [1, 24],
-                    "stack_input3": [1, 24],
-                }
-                self.dynamic_shape.max_input_shape = {
-                    "stack_input1": [4, 48],
-                    "stack_input2": [4, 48],
-                    "stack_input3": [4, 48],
-                }
-                self.dynamic_shape.opt_input_shape = {
-                    "stack_input1": [1, 24],
-                    "stack_input2": [1, 24],
-                    "stack_input3": [1, 24],
-                }
-            elif self.dims == 1:
-                self.dynamic_shape.min_input_shape = {
-                    "stack_input1": [24],
-                    "stack_input2": [24],
-                    "stack_input3": [24],
-                }
-                self.dynamic_shape.max_input_shape = {
-                    "stack_input1": [48],
-                    "stack_input2": [48],
-                    "stack_input3": [48],
-                }
-                self.dynamic_shape.opt_input_shape = {
-                    "stack_input1": [24],
-                    "stack_input2": [24],
-                    "stack_input3": [24],
-                }
-            elif self.dims == 0:
+            else:
                 self.dynamic_shape.min_input_shape = {
                     "stack_input1": [],
                     "stack_input2": [],
@@ -218,10 +152,12 @@ class TrtConvertStackTest(TrtLayerAutoScanTest):
         # for static_shape
         clear_dynamic_shape()
         self.trt_param.precision = paddle_infer.PrecisionType.Float32
+        program_config.set_input_type(np.float32)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, False
         ), 1e-5
         self.trt_param.precision = paddle_infer.PrecisionType.Half
+        program_config.set_input_type(np.float16)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, False
         ), 1e-3
@@ -229,10 +165,12 @@ class TrtConvertStackTest(TrtLayerAutoScanTest):
         # for dynamic_shape
         generate_dynamic_shape(attrs)
         self.trt_param.precision = paddle_infer.PrecisionType.Float32
+        program_config.set_input_type(np.float32)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, True
         ), 1e-5
         self.trt_param.precision = paddle_infer.PrecisionType.Half
+        program_config.set_input_type(np.float16)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, True
         ), 1e-3

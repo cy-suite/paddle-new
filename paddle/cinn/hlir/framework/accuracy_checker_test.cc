@@ -25,7 +25,7 @@
 #include "paddle/cinn/hlir/framework/instruction.h"
 #include "paddle/cinn/hlir/framework/op_strategy.h"
 
-DECLARE_string(cinn_self_check_accuracy);
+PD_DECLARE_string(cinn_self_check_accuracy);
 
 namespace cinn {
 namespace hlir {
@@ -49,20 +49,20 @@ void SetRandomTensor(Tensor tensor, Target target, bool generate_nan) {
   GenerateRandomData(random_nan_vec.data(), numel, generate_nan);
 
 #ifdef CINN_WITH_CUDA
-  if (target == common::DefaultNVGPUTarget()) {
+  if (target == cinn::common::DefaultNVGPUTarget()) {
     cudaMemcpy(dst,
                random_nan_vec.data(),
                numel * sizeof(float),
                cudaMemcpyHostToDevice);
   }
 #endif
-  if (target == common::DefaultHostTarget()) {
+  if (target == cinn::common::DefaultHostTarget()) {
     std::copy(random_nan_vec.begin(), random_nan_vec.end(), dst);
   }
 }
 
 TEST(AccuracyChecker, tensor) {
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   Scope scope;
   scope.Var<Tensor>("x");
   auto out = scope.GetTensor("x");
@@ -106,7 +106,7 @@ void InstantiateScope(Scope* scope, Target target) {
 }
 
 TEST(AccuracyChecker, instruction) {
-  Target target = common::DefaultHostTarget();
+  Target target = cinn::common::DefaultHostTarget();
   Scope scope;
   InstantiateScope(&scope, target);
 
@@ -148,7 +148,7 @@ void InitName2PodArgs(Target target,
 }
 
 TEST(AccuracyChecker, instruction_podargs) {
-  Target target = common::DefaultHostTarget();
+  Target target = cinn::common::DefaultHostTarget();
   std::vector<cinn_buffer_t> args_buffer(2);
   std::map<std::string, cinn_pod_value_t> name2podargs;
   InitName2PodArgs(target, &args_buffer, &name2podargs);

@@ -69,7 +69,7 @@ inline void ResetSubmKernelSizeAndStrides(const DDim& kernel_dims,
                                           std::vector<int>* paddings,
                                           std::vector<int>* strides) {
   for (uint64_t i = 0; i < paddings->size(); i++) {
-    (*paddings)[i] = kernel_dims[i] / 2;
+    (*paddings)[i] = kernel_dims[i] / 2;  // NOLINT
     (*strides)[i] = 1;
   }
 }
@@ -91,11 +91,11 @@ void Conv3dInferMeta(const MetaTensor& x,
 
   int rank = is2D ? 4 : 5;
   std::vector<int> out_dims_vec(rank, 1);
-  DDim out_dims = make_ddim(out_dims_vec);
+  DDim out_dims = common::make_ddim(out_dims_vec);
 
   std::vector<int> kernel_sizes(kernel_dims.size());
   for (int i = 0; i < kernel_dims.size(); i++) {
-    kernel_sizes[i] = kernel_dims[i];
+    kernel_sizes[i] = static_cast<int>(kernel_dims[i]);
   }
 
   std::vector<int> subm_paddings(paddings), subm_strides(strides);
@@ -143,8 +143,8 @@ void Pool3dInferMeta(const MetaTensor& x,
   const auto& x_dims = x.dims();
   DDim out_dims = {1, 1, 1, 1, 1};
 
-  const std::vector<int>& real_kernel_sizes =
-      PoolResetKernel(kernel_sizes, x_dims[4], x_dims[4]);
+  const std::vector<int>& real_kernel_sizes = PoolResetKernel(
+      kernel_sizes, static_cast<int>(x_dims[4]), static_cast<int>(x_dims[4]));
   GetOutShape(
       x_dims, real_kernel_sizes, paddings, dilations, strides, &out_dims);
   out->set_dtype(x.dtype());
@@ -164,7 +164,7 @@ void SparseCooTensorInferMeta(const MetaTensor& values,
                               const MetaTensor& indices,
                               const std::vector<int64_t>& shape,
                               MetaTensor* out) {
-  out->set_dims(phi::make_ddim(shape));
+  out->set_dims(common::make_ddim(shape));
   out->set_dtype(values.dtype());
   out->set_layout(values.layout());
 }

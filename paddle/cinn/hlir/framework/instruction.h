@@ -109,7 +109,7 @@ class Instruction {
         auto& pod_args = args_cached_[idx];
         CHECK(fn_ptrs_[idx]) << "The LoweredFunc address should be set first "
                                 "by calling SetLoweredFunc method";
-        if (target_ == common::DefaultNVGPUTarget()) {
+        if (target_ == cinn::common::DefaultNVGPUTarget()) {
           ((lower_func_ptr_g)fn_ptrs_[idx])(
               static_cast<void*>(pod_args.data()), pod_args.size(), stream);
         } else {
@@ -130,13 +130,20 @@ class Instruction {
     }
   }
 
-  int size() { return fn_ptrs_.size(); }
+  int size() const { return fn_ptrs_.size(); }
 
-  std::vector<std::vector<std::string>> GetInArgs() { return in_args_; }
-  std::vector<std::vector<std::string>> GetOutArgs() { return out_args_; }
+  std::string DumpInstruction() const;
+
+  const std::string& function_name() const { return function_name_; }
+  const std::vector<std::vector<std::string>>& GetInArgs() const {
+    return in_args_;
+  }
+  const std::vector<std::vector<std::string>>& GetOutArgs() const {
+    return out_args_;
+  }
   void ClearInArgs() { in_args_.clear(); }
   void ClearOutArgs() { out_args_.clear(); }
-  std::vector<std::string> GetFnNames() { return fn_names_; }
+  const std::vector<std::string>& GetFnNames() const { return fn_names_; }
   void AddInArgs(const std::vector<std::string>& in_args) {
     in_args_.push_back(in_args);
   }

@@ -49,7 +49,7 @@ int SizeOfType(framework_proto::VarType::Type type) {
 
 void TensorFromStream(std::istream &is,
                       hlir::framework::_Tensor_ *tensor,
-                      const common::Target &target) {
+                      const cinn::common::Target &target) {
   using Type = framework_proto::VarType::Type;
   uint32_t version;
   is.read(reinterpret_cast<char *>(&version), sizeof(version));
@@ -117,7 +117,7 @@ void TensorFromStream(std::istream &is,
 
 void LoadLoDTensor(std::istream &is,
                    hlir::framework::Variable *var,
-                   const common::Target &target) {
+                   const cinn::common::Target &target) {
   auto &tensor = absl::get<hlir::framework::Tensor>(*var);
   uint32_t version{};
   is.read(reinterpret_cast<char *>(&version), sizeof(version));
@@ -170,7 +170,7 @@ void LoadParams(const std::string &path) {}
 // Load directly to CPU, and latter transfer to other devices.
 void LoadParam(const std::string &path,
                hlir::framework::Variable *out,
-               const common::Target &target) {
+               const cinn::common::Target &target) {
   std::ifstream fin(path, std::ios::binary);
   CHECK(fin.is_open()) << "failed to open file " << path;
   LoadLoDTensor(fin, out, target);
@@ -190,7 +190,7 @@ void LoadCombinedParamsPb(const std::string &path,
                           hlir::framework::Scope *scope,
                           const cpp::ProgramDesc &cpp_prog,
                           bool params_from_memory,
-                          const common::Target &target) {
+                          const cinn::common::Target &target) {
   CHECK(scope);
   auto prog = cpp_prog;
   auto &main_block_desc = *prog.GetBlock<cpp::BlockDesc>(0);
@@ -236,7 +236,7 @@ void LoadModelPb(const std::string &model_dir,
                  cpp::ProgramDesc *cpp_prog,
                  bool combined,
                  bool model_from_memory,
-                 const common::Target &target) {
+                 const cinn::common::Target &target) {
   CHECK(cpp_prog);
   CHECK(scope);
   cpp_prog->ClearBlocks();
@@ -245,12 +245,8 @@ void LoadModelPb(const std::string &model_dir,
   VLOG(3) << "param_file is: " << param_file;
   // Load model
   VLOG(4) << "Start load model program...";
-  std::string prog_path = model_dir + "/__model__";
-  std::string param_file_temp = param_file;
-  if (combined) {
-    // prog_path = model_file;
-    param_file_temp = model_dir + "/params";
-  }
+  std::string prog_path = model_dir + model_file;
+  std::string param_file_temp = model_dir + param_file;
   framework_proto::ProgramDesc pb_proto_prog =
       *LoadProgram(prog_path, model_from_memory);
   pb::ProgramDesc pb_prog(&pb_proto_prog);

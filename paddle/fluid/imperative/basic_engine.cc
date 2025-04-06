@@ -112,7 +112,7 @@ void BasicEngine::Init(
     if (grad_tensor == nullptr) {
       grad_var->Resize(fwd_var.dims());
       grad_var->mutable_data(fwd_var.place(), fwd_var.type());
-      phi::funcs::set_constant(*dev_ctx, grad_var, 1.0);
+      phi::funcs::set_constant(*dev_ctx, grad_var, 1.0f);
     } else {
       paddle::framework::TensorCopy(grad_tensor->Var().Get<phi::DenseTensor>(),
                                     fwd_var.place(),
@@ -126,9 +126,10 @@ void BasicEngine::Init(
                                     [init_grad_var];
     if (!accumulator) {
       if (FLAGS_sort_sum_gradient) {
-        accumulator.reset(new SortedGradientAccumulator(init_grad_var));
+        accumulator =
+            std::make_unique<SortedGradientAccumulator>(init_grad_var);
       } else {
-        accumulator.reset(new EagerGradientAccumulator(init_grad_var));
+        accumulator = std::make_unique<EagerGradientAccumulator>(init_grad_var);
       }
     }
     accumulator->IncreaseRefCnt();
@@ -167,7 +168,7 @@ void BasicEngine::CheckBackwardInputs(const OpBase& op) {
         VLOG(6) << "Set ungenerated Grad: " << var->Name()
                 << " as zero with dtype "
                 << framework::DataTypeToString(var->ForwardDataType());
-        phi::funcs::set_constant(*dev_ctx, tensor, 0.0);
+        phi::funcs::set_constant(*dev_ctx, tensor, 0.0f);
       }
     }
   }
@@ -225,15 +226,17 @@ void BasicEngine::PrepareGradAccumulators(
 
             if (!accumulator) {
               if (FLAGS_sort_sum_gradient) {
-                accumulator.reset(new SortedGradientAccumulator(var.get()));
+                accumulator =
+                    std::make_unique<SortedGradientAccumulator>(var.get());
               } else {
-                accumulator.reset(new EagerGradientAccumulator(var.get()));
+                accumulator =
+                    std::make_unique<EagerGradientAccumulator>(var.get());
               }
             }
 
             accumulator->IncreaseRefCnt();
 
-            VLOG(3) << "Prepare to acccumulate variable grad " << var->Name()
+            VLOG(3) << "Prepare to accumulate variable grad " << var->Name()
                     << "(" << var.get()
                     << ") that has grad node with reference count "
                     << accumulator->RefCnt();
@@ -255,15 +258,16 @@ void BasicEngine::PrepareGradAccumulators(
         auto& accumulator = accumulators_[var.get()];
         if (!accumulator) {
           if (FLAGS_sort_sum_gradient) {
-            accumulator.reset(new SortedGradientAccumulator(var.get()));
+            accumulator =
+                std::make_unique<SortedGradientAccumulator>(var.get());
           } else {
-            accumulator.reset(new EagerGradientAccumulator(var.get()));
+            accumulator = std::make_unique<EagerGradientAccumulator>(var.get());
           }
         }
 
         accumulator->IncreaseRefCnt();
 
-        VLOG(3) << "Prepare to acccumulate variable grad " << var->Name() << "("
+        VLOG(3) << "Prepare to accumulate variable grad " << var->Name() << "("
                 << var.get()
                 << ") that don't have grad node  with reference count "
                 << accumulator->RefCnt();
@@ -282,9 +286,9 @@ void BasicEngine::PrepareDeps() {
   std::queue<GradOpNode*> q;
   std::unordered_set<GradOpNode*> visited;
 
-  for (size_t i = 0; i < init_nodes_.size(); ++i) {
-    q.push(init_nodes_[i].get());
-    visited.insert(init_nodes_[i].get());
+  for (auto& init_node : init_nodes_) {
+    q.push(init_node.get());
+    visited.insert(init_node.get());
   }
 
   while (!q.empty()) {
@@ -409,9 +413,9 @@ void BasicEngine::Execute() {
   PrepareDeps();
   // Start execute Computation graph
   std::queue<std::shared_ptr<GradOpNode>> q;
-  for (size_t i = 0; i < init_nodes_.size(); ++i) {
-    if (node_deps_[init_nodes_[i].get()] == 0) {
-      q.push(std::move(init_nodes_[i]));
+  for (auto& init_node : init_nodes_) {
+    if (node_deps_[init_node.get()] == 0) {
+      q.push(std::move(init_node));
     }
   }
 
@@ -441,7 +445,7 @@ void BasicEngine::Execute() {
        *
        * - construct the temp output map, avoid to disrupt graph
        * - replace the element in the map by temp var, because a
-       *   var may be coresponding to several grad var in one op
+       *   var may be corresponding to several grad var in one op
        */
       NameVarMap<VariableWrapper> tmp_outs(bwd_outs);
 
@@ -491,7 +495,7 @@ void BasicEngine::Execute() {
           }
 
           // leaf_accumulators_ : hooks and accumulate-grad for leaf tensor,
-          // it should be orderly and not reapeated.
+          // it should be orderly and not repeated.
           if (var->IsLeafGrad()) {
             if (std::find(leaf_accumulators_.begin(),
                           leaf_accumulators_.end(),
@@ -601,7 +605,7 @@ void BasicEngine::Execute() {
           }
         } catch (platform::EnforceNotMet& exception) {
           Clear();
-          throw std::move(exception);
+          throw exception;
         } catch (std::exception& ex) {
           Clear();
           PADDLE_THROW(platform::errors::External("%s", ex.what()));
@@ -616,7 +620,7 @@ void BasicEngine::Execute() {
       }
 
       for (auto& pair : inplace_output_grad_var_list_) {
-        *pair.first = std::move(*pair.second);
+        *pair.first = *pair.second;
       }
 
       // Step 2: Sum Gradient of This graph

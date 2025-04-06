@@ -25,7 +25,7 @@ from paddle.distributed.utils.nccl_utils import check_nccl_version_for_bf16
 
 
 def set_random_seed(seed, dp_id, rank_id):
-    """Set random seed for reproducability."""
+    """Set random seed for reproducibility."""
     random.seed(seed)
     np.random.seed(seed + dp_id)
     paddle.seed(seed + dp_id)
@@ -35,7 +35,7 @@ batch_size = 4
 micro_batch_size = 2
 
 
-class TestDistPPTraning(unittest.TestCase):
+class TestDistPPTraining(unittest.TestCase):
     def setUp(self):
         strategy = fleet.DistributedStrategy()
         self.model_parallel_size = 1

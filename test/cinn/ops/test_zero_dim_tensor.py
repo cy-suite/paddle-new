@@ -1321,6 +1321,33 @@ class TestReshapeOp1DTo0D(TestReshapeOp):
 @OpTestTool.skip_if(
     not is_compiled_with_cuda(), "x86 test will be skipped due to timeout."
 )
+class TestFillConstantOp(OpTest):
+    def setUp(self):
+        np.random.seed(2023)
+        self.target_shape = ()
+
+    def build_paddle_program(self, target):
+        out = paddle.full([], 123.456, "float32")
+
+        self.paddle_outputs = [out]
+
+    def build_cinn_program(self, target):
+        builder = NetBuilder("fill_constant_op")
+        out = builder.fill_constant([], 123.456, "out", "float32")
+
+        prog = builder.build()
+        res = self.get_cinn_output(prog, target, [], [], [out])
+
+        self.cinn_outputs = res
+        self.assertEqual(res[0].shape, self.target_shape)
+
+    def test_check_results(self):
+        self.check_outputs_and_grads()
+
+
+@OpTestTool.skip_if(
+    not is_compiled_with_cuda(), "x86 test will be skipped due to timeout."
+)
 class TestSqueezeOp(OpTest):
     def setUp(self):
         np.random.seed(2023)
@@ -1331,12 +1358,12 @@ class TestSqueezeOp(OpTest):
         self.inputs = {
             "x": np.random.randint(-10, 10, []).astype(self.dtype),
         }
-        self.squeeze_axex = [0]
+        self.squeeze_axes = [0]
         self.target_shape = ()
 
     def build_paddle_program(self, target):
         x = paddle.to_tensor(self.inputs["x"], stop_gradient=False)
-        out = paddle.squeeze(x, axis=self.squeeze_axex)
+        out = paddle.squeeze(x, axis=self.squeeze_axes)
 
         self.paddle_outputs = [out]
 
@@ -1345,7 +1372,7 @@ class TestSqueezeOp(OpTest):
         x = builder.create_input(
             cinn_dtype_convert(self.dtype), self.inputs["x"].shape, "x"
         )
-        out = builder.squeeze(x, self.squeeze_axex)
+        out = builder.squeeze(x, self.squeeze_axes)
 
         prog = builder.build()
         res = self.get_cinn_output(prog, target, [x], [self.inputs["x"]], [out])
@@ -1362,7 +1389,7 @@ class TestSqueezeOp1D(TestSqueezeOp):
         self.inputs = {
             "x": np.random.randint(-10, 10, [1]).astype(self.dtype),
         }
-        self.squeeze_axex = []
+        self.squeeze_axes = []
         self.target_shape = ()
 
 
@@ -1371,7 +1398,7 @@ class TestSqueezeOp2D(TestSqueezeOp):
         self.inputs = {
             "x": np.random.randint(-10, 10, [1, 1]).astype(self.dtype),
         }
-        self.squeeze_axex = [0, 1]
+        self.squeeze_axes = [0, 1]
         self.target_shape = ()
 
 

@@ -37,7 +37,6 @@ namespace paddle {
 
 using framework::Variable;
 using framework::ir::Graph;
-using phi::CPUPlace;
 using ConstEigenVectorArrayMap =
     Eigen::Map<const Eigen::Array<float, Eigen::Dynamic, 1>>;
 using EigenMatrixDoubleArray =
@@ -158,7 +157,7 @@ void AnalysisPredictor::MkldnnQuantizer::CalculateScalesForOpOutputs(
         // output of ops with unsigned input must be unsigned
         is_unsigned = true;
         double min_scale = std::numeric_limits<double>::max();
-        for (auto input_var_name : op->Input("X")) {
+        for (auto const& input_var_name : op->Input("X")) {
           PADDLE_ENFORCE_NE(
               scales_.find(input_var_name),
               scales_.end(),
@@ -429,7 +428,7 @@ AnalysisPredictor::MkldnnQuantizer::GetMaxChScalingFactor(
 
   auto dims = var_tensor.dims();
   constexpr int num_col_dims = 1;
-  auto flattened_dims = phi::flatten_to_2d(dims, num_col_dims);
+  auto flattened_dims = common::flatten_to_2d(dims, num_col_dims);
   ConstEigenMatrixArrayMap eigen_tensor_mat{
       var_tensor.data<float>(), flattened_dims[0], flattened_dims[1]};
 
@@ -578,7 +577,7 @@ AnalysisPredictor::MkldnnQuantizer::Histogram(
     ++hist[bin];
   }
 
-  return std::make_pair(std::move(hist), std::move(bin_width));
+  return std::make_pair(std::move(hist), bin_width);
 }
 
 void AnalysisPredictor::MkldnnQuantizer::ClearDeviceContext() const {
@@ -592,7 +591,7 @@ void AnalysisPredictor::MkldnnQuantizer::PrepareArgument() const {
   auto& arg = predictor_.argument_;
   if (!arg->scope_valid()) arg->SetScope(new framework::Scope);
   arg->SetMainProgramNotOwned(predictor_.inference_program_.get());
-  auto graph = std::unique_ptr<Graph>(new Graph(arg->main_program()));
+  auto graph = std::make_unique<Graph>(arg->main_program());
   arg->SetMainGraph(graph.release());
   auto* scope_ptr = arg->scope_ptr();
   PADDLE_ENFORCE_NOT_NULL(

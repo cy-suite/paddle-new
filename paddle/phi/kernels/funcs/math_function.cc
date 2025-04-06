@@ -27,6 +27,7 @@ limitations under the License. */
 #include <utility>
 #include <vector>
 
+#include "paddle/phi/backends/context_pool.h"
 #include "paddle/phi/backends/cpu/cpu_context.h"
 #include "paddle/phi/common/bfloat16.h"
 #include "paddle/phi/common/data_type.h"
@@ -53,6 +54,7 @@ template struct SetConstant<phi::CPUContext, int>;
 template struct SetConstant<phi::CPUContext, int64_t>;
 template struct SetConstant<phi::CPUContext, bool>;
 template struct SetConstant<phi::CPUContext, uint8_t>;
+template struct SetConstant<phi::CPUContext, int8_t>;
 template struct SetConstant<phi::CPUContext, phi::dtype::complex<float>>;
 template struct SetConstant<phi::CPUContext, phi::dtype::complex<double>>;
 
@@ -62,13 +64,13 @@ template struct SetConstant<phi::XPUContext, phi::dtype::bfloat16>;
 template struct SetConstant<phi::XPUContext, float>;
 template struct SetConstant<phi::XPUContext, double>;
 template struct SetConstant<phi::XPUContext, uint8_t>;
+template struct SetConstant<phi::XPUContext, int8_t>;
 template struct SetConstant<phi::XPUContext, int16_t>;
 template struct SetConstant<phi::XPUContext, int>;
 template struct SetConstant<phi::XPUContext, int64_t>;
 template struct SetConstant<phi::XPUContext, bool>;
 template struct SetConstant<phi::XPUContext, phi::dtype::complex<float>>;
 template struct SetConstant<phi::XPUContext, phi::dtype::complex<double>>;
-
 #endif
 
 #define DEFINE_CPU_TRANS(RANK)                                            \
@@ -100,9 +102,9 @@ void TransposeNormal<DeviceContext, T>::operator()(
     const phi::DenseTensor& in,
     phi::DenseTensor* out,
     const std::vector<int>& axis) {
-  const int rank = axis.size();
-  auto in_stride = phi::stride(in.dims());
-  auto out_stride = phi::stride(out->dims());
+  const int rank = static_cast<const int>(axis.size());
+  auto in_stride = common::stride(in.dims());
+  auto out_stride = common::stride(out->dims());
   const T* in_ptr = in.data<T>();
   T* out_ptr = out->data<T>();
 
@@ -189,7 +191,7 @@ void set_constant_with_place<phi::CustomPlace>(
                                     phi::DenseTensor*);
   auto* kernel_fn = kernel.GetVariadicKernelFn<kernel_signature>();
   (*kernel_fn)(context,
-               phi::IntArray(phi::vectorize(tensor->dims())),
+               phi::IntArray(common::vectorize(tensor->dims())),
                phi::Scalar(value),
                tensor->dtype(),
                tensor);
@@ -243,7 +245,12 @@ void set_constant(const phi::DeviceContext& context,
   // tensor->place().apply_visitor(func);
   phi::VisitPlace(tensor->place(), func);
 #elif defined(PADDLE_WITH_XPU)
-  func(phi::XPUPlace());
+  if (context.GetPlace().GetType() == phi::AllocationType::XPU) {
+    func(phi::XPUPlace());
+    return;
+  } else {
+    func(phi::CPUPlace());
+  }
 #else
   func(phi::CPUPlace());
 #endif
@@ -275,16 +282,14 @@ struct RowwiseAdd<phi::CPUContext, T> {
             " Expected vector size=%d, but received %d",
             size,
             vector.numel()));
-    const char* in_dims_cstr = in_dims.to_str().c_str();
-    const char* out_dims_cstr = out_dims.to_str().c_str();
     PADDLE_ENFORCE_EQ(out_dims,
                       in_dims,
                       phi::errors::InvalidArgument(
                           "The output tensor shape should be same as the input"
                           " tensor shape. Expected output tensor shape: %s,"
                           " but received %s",
-                          in_dims_cstr,
-                          out_dims_cstr));
+                          in_dims.to_str().c_str(),
+                          out_dims.to_str().c_str()));
 
     auto in = phi::EigenMatrix<T>::From(input);
     auto vec = phi::EigenVector<T>::Flatten(vector);

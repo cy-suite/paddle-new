@@ -24,6 +24,7 @@ void GatherNdKernel(const Context &ctx,
                     const DenseTensor &x,
                     const DenseTensor &index,
                     DenseTensor *out) {
+  using XPUType = typename XPUTypeTrait<T>::Type;
   ctx.template Alloc<T>(out);
 
   if (x.numel() == 0) {
@@ -40,8 +41,8 @@ void GatherNdKernel(const Context &ctx,
         0,
         phi::errors::InvalidArgument("end_size[%d] should be 0", end_size));
     // remain dim
-    auto remain_ddim = phi::slice_ddim(index_dims, 0, index_dims_size - 1);
-    int64_t remain_numel = phi::product(remain_ddim);
+    auto remain_ddim = common::slice_ddim(index_dims, 0, index_dims_size - 1);
+    int64_t remain_numel = common::product(remain_ddim);
 
     int64_t x_numel = x.numel();
     int64_t y_numel = out->numel();
@@ -57,8 +58,8 @@ void GatherNdKernel(const Context &ctx,
     // int broadcast(Context* ctx, const T* x, T* y, const std::vector<int>&
     // xshape, const std::vector<int>& yshape)
     int r = xpu::broadcast(ctx.x_context(),
-                           x.data<T>(),
-                           out->data<T>(),
+                           reinterpret_cast<const XPUType *>(x.data<T>()),
+                           reinterpret_cast<XPUType *>(out->data<T>()),
                            {1, x_numel},
                            {remain_numel, x_numel});
     PADDLE_ENFORCE_XDNN_SUCCESS(r, "broadcast");
@@ -77,8 +78,8 @@ void GatherNdKernel(const Context &ctx,
                                    DataType::INT32,
                                    DataType::INT64));
 
-  auto x_shape = phi::vectorize<int>(x.dims());
-  auto index_shape = phi::vectorize<int>(index.dims());
+  auto x_shape = common::vectorize<int>(x.dims());
+  auto index_shape = common::vectorize<int>(index.dims());
   if (index_shape.size() == 1) {
     index_shape.insert(index_shape.begin(), 1);
   }
@@ -86,25 +87,55 @@ void GatherNdKernel(const Context &ctx,
       x_shape.data(), static_cast<int>(x_shape.size()), nullptr};
 
   int ret = XPU_SUCCESS;
+#ifndef PADDLE_WITH_XPU_PLUGIN
   if (index_type == DataType::INT32) {
-    ret = xpu::gather_nd<T, int>(ctx.x_context(),
-                                 x.data<T>(),
-                                 index.data<int>(),
-                                 out->data<T>(),
-                                 x_vec,
-                                 index_shape);
+    ret = xpu::gather_nd<XPUType, int>(
+        ctx.x_context(),
+        reinterpret_cast<const XPUType *>(x.data<T>()),
+        index.data<int>(),
+        reinterpret_cast<XPUType *>(out->data<T>()),
+        x_vec,
+        index_shape);
   } else {
-    ret = xpu::gather_nd<T, int64_t>(ctx.x_context(),
-                                     x.data<T>(),
-                                     index.data<int64_t>(),
-                                     out->data<T>(),
-                                     x_vec,
-                                     index_shape);
+    ret = xpu::gather_nd<XPUType, int64_t>(
+        ctx.x_context(),
+        reinterpret_cast<const XPUType *>(x.data<T>()),
+        index.data<int64_t>(),
+        reinterpret_cast<XPUType *>(out->data<T>()),
+        x_vec,
+        index_shape);
   }
   PADDLE_ENFORCE_XDNN_SUCCESS(ret, "gather_nd");
+#else
+  if (index_type == DataType::INT32) {
+    ret = xpu::plugin::fast_gather_nd<XPUType, int>(
+        ctx.x_context(),
+        reinterpret_cast<const XPUType *>(x.data<T>()),
+        index.data<int>(),
+        reinterpret_cast<XPUType *>(out->data<T>()),
+        x_vec,
+        index_shape);
+  } else {
+    ret = xpu::plugin::fast_gather_nd<XPUType, int64_t>(
+        ctx.x_context(),
+        reinterpret_cast<const XPUType *>(x.data<T>()),
+        index.data<int64_t>(),
+        reinterpret_cast<XPUType *>(out->data<T>()),
+        x_vec,
+        index_shape);
+  }
+  PADDLE_ENFORCE_XDNN_SUCCESS(ret, "fast_gather_nd");
+#endif
 }
 
 }  // namespace phi
 
-PD_REGISTER_KERNEL(
-    gather_nd, XPU, ALL_LAYOUT, phi::GatherNdKernel, float, int64_t, int) {}
+PD_REGISTER_KERNEL(gather_nd,
+                   XPU,
+                   ALL_LAYOUT,
+                   phi::GatherNdKernel,
+                   float,
+                   int64_t,
+                   int,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16) {}

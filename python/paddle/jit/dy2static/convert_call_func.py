@@ -18,7 +18,7 @@ import functools
 import inspect
 import logging
 import os
-import pdb
+import pdb  # noqa: T100
 import re
 from typing import Any, List
 
@@ -40,7 +40,7 @@ from .program_translator import (
     convert_to_static,
     unwrap_decorators,
 )
-from .utils import is_builtin, is_paddle_func, unwrap
+from .utils import is_builtin, is_paddle_func
 
 __all__ = []
 
@@ -124,9 +124,7 @@ def is_unsupported(func):
             if func is v:
                 translator_logger.log(
                     2,
-                    "Whitelist: {} is part of built-in module and does not have to be transformed.".format(
-                        func
-                    ),
+                    f"Whitelist: {func} is part of built-in module and does not have to be transformed.",
                 )
                 return True
 
@@ -142,9 +140,8 @@ def is_unsupported(func):
     if is_paddle_func(func):
         translator_logger.log(
             2,
-            "Whitelist: {} is part of Paddle module and does not have to be transformed.".format(
-                func
-            ),
+            "Whitelist: %s is part of Paddle module and does not have to be transformed.",
+            func,
         )
         return True
 
@@ -162,30 +159,31 @@ def convert_call(func):
     Examples:
         .. code-block:: python
 
-            import paddle
-            from paddle.jit.dy2static import Call
+            >>> # doctest: +SKIP('`paddle.jit.to_static` can not run in xdoctest')
+            >>> import paddle
+            >>> from paddle.jit.dy2static import Call
 
-            paddle.enable_static()
-            def dyfunc(x):
-                if paddle.mean(x) < 0:
-                    x_v = x - 1
-                else:
-                    x_v = x + 1
-                return x_v
+            >>> paddle.enable_static()
+            >>> def dyfunc(x):
+            ...     if paddle.mean(x) < 0:
+            ...         x_v = x - 1
+            ...     else:
+            ...         x_v = x + 1
+            ...     return x_v
+            ...
+            >>> new_func = Call(dyfunc)
+            >>> x = paddle.tensor.manipulation.fill_constant(shape=[3, 3], value=0, dtype='float64')
+            >>> x_v = new_func(x)
 
-            new_func = Call(dyfunc)
-            x = paddle.tensor.manipulation.fill_constant(shape=[3, 3], value=0, dtype='float64')
-            x_v = new_func(x)
-
-            exe = paddle.static.Executor(paddle.CPUPlace())
-            out = exe.run(fetch_list=[x_v])
-            print(out[0])
-            # [[1. 1. 1.]
-            #  [1. 1. 1.]
-            #  [1. 1. 1.]]
+            >>> exe = paddle.static.Executor(paddle.CPUPlace())
+            >>> out = exe.run(fetch_list=[x_v])
+            >>> print(out[0])
+            [[1. 1. 1.]
+             [1. 1. 1.]
+             [1. 1. 1.]]
 
     """
-    translator_logger.log(1, f"Convert callable object: convert {func}.")
+    translator_logger.log(1, "Convert callable object: convert %s.", func)
     func_self = None
     converted_call = None
 
@@ -197,9 +195,8 @@ def convert_call(func):
     if options is not None and options.not_convert:
         translator_logger.log(
             2,
-            "{} is not converted when it is decorated by 'paddle.jit.not_to_static'.".format(
-                func
-            ),
+            "%s is not converted when it is decorated by 'paddle.jit.not_to_static'.",
+            func,
         )
         return func
 
@@ -255,7 +252,7 @@ def convert_call(func):
             # `foo` will be converted into a wrapper class, suppose as `StaticFunction`.
             # And `foo.__globals__['foo']` will still return this `StaticFunction` instead of
             # `foo` function. So `isinstance(fn, StaticFunction)` is added here.
-            _origfunc = unwrap(func)
+            _origfunc = inspect.unwrap(func)
             global_functions = set()
             for fn in _origfunc.__globals__.values():
                 if inspect.isfunction(fn):
@@ -279,9 +276,8 @@ def convert_call(func):
                 # If func is not in __globals__, it does not need to be transformed
                 # because it has been transformed before.
                 translator_logger.warn(
-                    "{} doesn't have to be transformed to static function because it has been transformed before, it will be run as-is.".format(
-                        func
-                    )
+                    "%s doesn't have to be transformed to static function because it has been transformed before, it will be run as-is.",
+                    func,
                 )
                 converted_call = func
         except AttributeError:
@@ -333,9 +329,8 @@ def convert_call(func):
 
     if converted_call is None:
         translator_logger.warn(
-            "{} doesn't have to be transformed to static function, and it will be run as-is.".format(
-                func
-            )
+            "%s doesn't have to be transformed to static function, and it will be run as-is.",
+            func,
         )
         return func
 

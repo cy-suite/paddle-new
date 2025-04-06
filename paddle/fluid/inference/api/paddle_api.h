@@ -26,6 +26,7 @@
 #include <map>
 #include <memory>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include "crypto/cipher.h"
@@ -137,9 +138,9 @@ class PD_INFER_DECL PaddleBuf {
 
   ~PaddleBuf() { Free(); }
   PaddleBuf& operator=(const PaddleBuf&);
-  PaddleBuf& operator=(PaddleBuf&&);
+  PaddleBuf& operator=(PaddleBuf&&) noexcept;
   PaddleBuf() = default;
-  PaddleBuf(PaddleBuf&& other);
+  PaddleBuf(PaddleBuf&& other) noexcept;
 
  private:
   void Free();
@@ -294,8 +295,9 @@ class PD_INFER_DECL PaddlePredictor {
   /// To use it, one should call the AnalysisConfig.SwitchUseFeedFetchOp(false)
   /// and then use the `GetInputTensor` and `GetOutputTensor`
   /// to directly write or read the input/output tensors.
+  /// \param switch_stream Whether the stream is switched.
   /// \return Whether the run is successful
-  virtual bool ZeroCopyRun() { return false; }
+  virtual bool ZeroCopyRun(bool switch_stream = false) { return false; }
 
   ///
   /// \brief Clear the intermediate tensors of the predictor
@@ -459,7 +461,7 @@ PD_INFER_DECL int PaddleDtypeSize(PaddleDType dtype);
 
 PD_INFER_DECL std::string get_version();
 
-PD_INFER_DECL std::string UpdateDllFlag(const char* name, const char* value);
+PD_INFER_DECL void UpdateDllFlag(const char* name, const char* value);
 
 PD_INFER_DECL std::shared_ptr<framework::Cipher> MakeCipher(
     const std::string& config_file);
@@ -516,6 +518,9 @@ class PD_INFER_DECL InternalUtils {
 
   static void SetTransformerMaskid(
       paddle_infer::Config* c, const std::string& tensorrt_transformer_maskid);
+
+  static void DisableTensorRtHalfOps(
+      paddle_infer::Config* c, const std::unordered_set<std::string>& ops);
 
   static void SyncStream(paddle_infer::Predictor* pred);
   static void SyncStream(cudaStream_t stream);

@@ -31,11 +31,9 @@
 #include "paddle/cinn/hlir/framework/pass.h"
 #include "paddle/cinn/hlir/framework/scope.h"
 #include "paddle/cinn/ir/ir_base.h"
+#include "paddle/cinn/ir/ir_printer.h"
 #include "paddle/cinn/ir/schedule/ir_schedule.h"
-#include "paddle/cinn/ir/utils/ir_printer.h"
 #include "paddle/cinn/utils/string.h"
-
-DECLARE_bool(cinn_ir_schedule);
 
 namespace cinn {
 namespace auto_schedule {
@@ -59,13 +57,11 @@ Program CreateAddProgram() {
 }
 
 TEST(TuneTask, GraphToUnoptLoweredFunc_NoPass) {
-  // Auto tuner is combined with IR schedule
-  FLAGS_cinn_ir_schedule = true;
   Context::Global().ResetNameId();
 #ifdef CINN_WITH_CUDA
-  Target target = common::DefaultNVGPUTarget();
+  Target target = cinn::common::DefaultNVGPUTarget();
 #else
-  Target target = common::DefaultHostTarget();
+  Target target = cinn::common::DefaultHostTarget();
 #endif
   Program prog = CreateAddProgram();
   auto graph = std::make_shared<hlir::framework::Graph>(prog, target);
@@ -77,9 +73,10 @@ TEST(TuneTask, GraphToUnoptLoweredFunc_NoPass) {
   const auto& shape_dict = graph->GetAttrs<
       absl::flat_hash_map<std::string, hlir::framework::shape_t>>("infershape");
   const auto& dtype_dict =
-      graph->GetAttrs<absl::flat_hash_map<std::string, common::Type>>(
+      graph->GetAttrs<absl::flat_hash_map<std::string, cinn::common::Type>>(
           "inferdtype");
-  OpLowerer op_lowerer(dtype_dict, shape_dict, target);
+  auto op_lowerer =
+      hlir::framework::CreateOpLowerer(dtype_dict, shape_dict, target);
 
   std::stringstream ss;
   for (TuneTask& task : tasks) {
@@ -170,13 +167,11 @@ TEST(TuneTask, GraphToUnoptLoweredFunc_NoPass) {
 }
 
 TEST(TuneTask, GraphToUnoptLoweredFunc_ApplyPass) {
-  // Auto tuner is combined with IR schedule
-  FLAGS_cinn_ir_schedule = true;
   Context::Global().ResetNameId();
 #ifdef CINN_WITH_CUDA
-  Target target = common::DefaultNVGPUTarget();
+  Target target = cinn::common::DefaultNVGPUTarget();
 #else
-  Target target = common::DefaultHostTarget();
+  Target target = cinn::common::DefaultHostTarget();
 #endif
   Program prog = CreateAddProgram();
   auto graph = std::make_shared<hlir::framework::Graph>(prog, target);
@@ -190,10 +185,11 @@ TEST(TuneTask, GraphToUnoptLoweredFunc_ApplyPass) {
   const auto& shape_dict = graph->GetAttrs<
       absl::flat_hash_map<std::string, hlir::framework::shape_t>>("infershape");
   const auto& dtype_dict =
-      graph->GetAttrs<absl::flat_hash_map<std::string, common::Type>>(
+      graph->GetAttrs<absl::flat_hash_map<std::string, cinn::common::Type>>(
           "inferdtype");
 
-  OpLowerer op_lowerer(dtype_dict, shape_dict, target);
+  OpLowerer op_lowerer(
+      new hlir::framework::OpLowererImpl(dtype_dict, shape_dict, target));
 
   std::stringstream ss;
   for (TuneTask& task : tasks) {
@@ -281,9 +277,9 @@ TEST(TuneTask, GraphToUnoptLoweredFunc_ApplyPass) {
 TEST(TuneTask, SerializeToString) {
   Context::Global().ResetNameId();
 #ifdef CINN_WITH_CUDA
-  Target target = common::DefaultNVGPUTarget();
+  Target target = cinn::common::DefaultNVGPUTarget();
 #else
-  Target target = common::DefaultHostTarget();
+  Target target = cinn::common::DefaultHostTarget();
 #endif
   Program prog = CreateAddProgram();
   auto graph = std::make_shared<hlir::framework::Graph>(prog, target);
@@ -295,9 +291,10 @@ TEST(TuneTask, SerializeToString) {
   const auto& shape_dict = graph->GetAttrs<
       absl::flat_hash_map<std::string, hlir::framework::shape_t>>("infershape");
   const auto& dtype_dict =
-      graph->GetAttrs<absl::flat_hash_map<std::string, common::Type>>(
+      graph->GetAttrs<absl::flat_hash_map<std::string, cinn::common::Type>>(
           "inferdtype");
-  OpLowerer op_lowerer(dtype_dict, shape_dict, target);
+  OpLowerer op_lowerer(
+      new hlir::framework::OpLowererImpl(dtype_dict, shape_dict, target));
   ASSERT_EQ(single_tasks.size(), 2UL);
   for (auto&& task : single_tasks) {
     task.Initialize(shape_dict, dtype_dict, &op_lowerer);

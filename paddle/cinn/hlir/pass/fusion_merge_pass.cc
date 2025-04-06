@@ -14,7 +14,7 @@
 
 #include "paddle/cinn/hlir/pass/fusion_merge_pass_util.h"
 
-DECLARE_bool(enhance_vertical_fusion_with_recompute);
+PD_DECLARE_bool(enhance_vertical_fusion_with_recompute);
 
 namespace cinn {
 namespace hlir {
@@ -26,8 +26,8 @@ using framework::NodeData;
 using framework::OpPatternKind;
 using framework::shape_t;
 
-using common::GraphEdge;
-using common::GraphNode;
+using cinn::common::GraphEdge;
+using cinn::common::GraphNode;
 
 using Comparator = Graph::Group::SharedGroupComparator;
 using Hasher = Graph::Group::SharedGroupHasher;

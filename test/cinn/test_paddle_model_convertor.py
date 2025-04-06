@@ -81,7 +81,7 @@ paddle.enable_static()
 # exe.run(paddle.static.default_startup_program())
 # prog = paddle.static.default_main_program()
 
-# paddle.fluid.io.save_inference_model("./stack", [x.name, y.name], [prediction], exe, prog)
+# paddle.static.io.save_inference_model("./stack", [x.name, y.name], [prediction], exe, prog)
 # ```
 # Second load and run model like:
 # ```
@@ -112,7 +112,7 @@ class TestPaddleModel(OpMapperTest):
         self.init_case()
 
     @staticmethod
-    def eliminate_unkown_shape(shape):
+    def eliminate_unknown_shape(shape):
         return [1 if dim == -1 else dim for dim in shape]
 
     def get_paddle_op_attrs(self, op):
@@ -138,7 +138,7 @@ class TestPaddleModel(OpMapperTest):
 
             # the paddle's feed list need dict not list
             self.feed_data[self.feed_names[i]] = self.random(
-                self.eliminate_unkown_shape(self.feed_shapes[i]),
+                self.eliminate_unknown_shape(self.feed_shapes[i]),
                 dtype,
                 high=high,
             )
@@ -150,11 +150,9 @@ class TestPaddleModel(OpMapperTest):
             self.inference_program,
             self.feed_names,
             self.fetch_targets,
-        ] = paddle.fluid.io.load_inference_model(
-            dirname=self.model_dir,
+        ] = paddle.static.io.load_inference_model(
+            path_prefix=self.model_dir,
             executor=self.exe,
-            model_filename=self.model_filename,
-            params_filename=self.params_filename,
         )
 
         self.param_vars = paddle.load(
@@ -168,9 +166,7 @@ class TestPaddleModel(OpMapperTest):
         logger.debug(msg=f"Param List: {self.param_vars.keys()}")
         logger.debug(msg=f"Feed List: {self.feed_names}")
         logger.debug(
-            msg="Fetch List: {}".format(
-                [var.name for var in self.fetch_targets]
-            )
+            msg=f"Fetch List: {[var.name for var in self.fetch_targets]}"
         )
 
         self.feed_shapes = []
@@ -293,6 +289,6 @@ class TestPaddleModel(OpMapperTest):
 
 if __name__ == "__main__":
     tester = unittest.defaultTestLoader.loadTestsFromTestCase(TestPaddleModel)
-    test_runer = unittest.TextTestRunner()
-    res = test_runer.run(tester)
+    test_runner = unittest.TextTestRunner()
+    res = test_runner.run(tester)
     sys.exit(not res.wasSuccessful())

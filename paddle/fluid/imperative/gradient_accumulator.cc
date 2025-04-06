@@ -37,6 +37,7 @@
 #ifdef PADDLE_WITH_CUSTOM_DEVICE
 #include "paddle/phi/backends/device_manager.h"
 #endif
+#include "paddle/phi/api/lib/data_transform.h"
 #include "paddle/phi/kernels/elementwise_add_kernel.h"
 
 namespace paddle {
@@ -137,7 +138,7 @@ TType& GetInnerTensor(const paddle::Tensor& src) {
       src.initialized(),
       true,
       platform::errors::Fatal("We only add tensor with value if a tensor is "
-                              "NOT INITILIZED, it should just move instead of "
+                              "NOT INITIALIZED, it should just move instead of "
                               "calling this method."));
   auto* src_tensor = static_cast<TType*>(src.impl().get());
   return *src_tensor;
@@ -166,6 +167,10 @@ void TensorAdd(const VarType& src, VarType* dst) {
   phi::DenseTensor* dst_tensor = GetInnerMutableTensor<phi::DenseTensor>(dst);
   const phi::DenseTensor& src_tensor = GetInnerTensor<phi::DenseTensor>(src);
 
+  paddle::experimental::CheckAndTrans2Contiguous(
+      const_cast<phi::DenseTensor*>(&src_tensor));
+  paddle::experimental::CheckAndTrans2Contiguous(dst_tensor);
+
   auto numel = src_tensor.numel();
 
   // FIXME(minqiyang): loss_grad op will pass a zero grad of label
@@ -193,7 +198,7 @@ void TensorAdd(const VarType& src, VarType* dst) {
   }
 
   // AddKernel already support inputs of different dtype. For AMP master_grad,
-  // the dtype of source tensor and destination tensor will be diferent. So the
+  // the dtype of source tensor and destination tensor will be different. So the
   // check requiring input dtypes to be the same have been removed.
 #define PADDLE_TENSOR_ADD(T, CONTEXT)                                          \
   if (data_type == framework::DataTypeTrait<T>::DataType()) {                  \
@@ -270,6 +275,9 @@ void TensorAdd(const VarType& src, VarType* dst) {
       XPUTensorAddFunctor<platform::float16>(place, src_tensor, dst_tensor);
     } else if (data_type == framework::DataTypeTrait<double>::DataType()) {
       XPUTensorAddFunctor<double>(place, src_tensor, dst_tensor);
+    } else if (data_type ==
+               framework::DataTypeTrait<platform::bfloat16>::DataType()) {
+      XPUTensorAddFunctor<platform::bfloat16>(place, src_tensor, dst_tensor);
     } else {
       PADDLE_THROW(platform::errors::Unimplemented(
           "Gradient accumulation of data type (%s) on place (%s) is not "
@@ -298,6 +306,11 @@ void SelectedRowsAddToTensor(const VarType& src, VarType* dst) {
   phi::DenseTensor* dst_tensor = GetInnerMutableTensor<phi::DenseTensor>(dst);
   const phi::SelectedRows& src_selected_rows =
       GetInnerTensor<phi::SelectedRows>(src);
+
+  paddle::experimental::CheckAndTrans2Contiguous(
+      const_cast<phi::SelectedRows*>(&src_selected_rows)->mutable_value());
+  paddle::experimental::CheckAndTrans2Contiguous(dst_tensor);
+
   auto place = dst_tensor->place();
   auto data_type =
       framework::TransToProtoVarType(src_selected_rows.value().dtype());
@@ -345,6 +358,10 @@ void SelectedRowsAddTensor(const VarType& src_selected_rows_var,
       GetInnerTensor<phi::SelectedRows>(src_selected_rows_var);
   const phi::DenseTensor& src_tensor =
       GetInnerTensor<phi::DenseTensor>(src_tensor_var);
+
+  paddle::experimental::CheckAndTrans2Contiguous(
+      const_cast<phi::SelectedRows*>(&src_selected_rows)->mutable_value());
+
   const auto& place = src_tensor.place();
   auto data_type = framework::TransToProtoVarType(src_tensor.dtype());
   auto* dev_ctx = platform::DeviceContextPool::Instance().Get(place);
@@ -401,6 +418,11 @@ std::shared_ptr<ReturnVarType> SelectedRowsMerge(const VarType& src1,
       GetInnerTensor<phi::SelectedRows>(src1);
   const phi::SelectedRows& src_selected_rows2 =
       GetInnerTensor<phi::SelectedRows>(src2);
+
+  paddle::experimental::CheckAndTrans2Contiguous(
+      const_cast<phi::SelectedRows*>(&src_selected_rows1)->mutable_value());
+  paddle::experimental::CheckAndTrans2Contiguous(
+      const_cast<phi::SelectedRows*>(&src_selected_rows2)->mutable_value());
 
   auto place = src_selected_rows1.value().place();
   auto data_type =
@@ -528,7 +550,7 @@ void GradientAccumulator::AccumulateGrad() {
   auto* dst = var_->MutableVar();
   if (!var_->IsEmpty()) {
     VLOG(6) << "Leaf Var(" << var_->Name()
-            << ")'s Gradient has been initizlized, will accumulate on "
+            << ")'s Gradient has been initialized, will accumulate on "
                "previous gradient.";
     if (dst->IsType<phi::DenseTensor>()) {
       if (src->IsType<phi::DenseTensor>()) {
@@ -655,12 +677,12 @@ void EagerGradientAccumulator::SumGrad(std::shared_ptr<VariableWrapper> var,
         tensor->Resize(var->Var().Get<phi::DenseTensor>().dims());
         tensor->mutable_data(place,
                              framework::TransToPhiDataType(var->DataType()));
-        phi::funcs::set_constant(*dev_ctx, tensor, 0.0);
+        phi::funcs::set_constant(*dev_ctx, tensor, 0.0f);
       } else {
         auto* tensor = dst_var->MutableVar()->GetMutable<phi::DenseTensor>();
         tensor->mutable_data(place,
                              framework::TransToPhiDataType(var->DataType()));
-        phi::funcs::set_constant(*dev_ctx, tensor, 0.0);
+        phi::funcs::set_constant(*dev_ctx, tensor, 0.0f);
       }
     }
   }
@@ -795,12 +817,12 @@ void SortedGradientAccumulator::SumGrad(std::shared_ptr<VariableWrapper> var,
         tensor->Resize(var->Var().Get<phi::DenseTensor>().dims());
         tensor->mutable_data(place,
                              framework::TransToPhiDataType(var->DataType()));
-        phi::funcs::set_constant(*dev_ctx, tensor, 0.0);
+        phi::funcs::set_constant(*dev_ctx, tensor, 0.0f);
       } else {
         auto* tensor = dst_var->MutableVar()->GetMutable<phi::DenseTensor>();
         tensor->mutable_data(place,
                              framework::TransToPhiDataType(var->DataType()));
-        phi::funcs::set_constant(*dev_ctx, tensor, 0.0);
+        phi::funcs::set_constant(*dev_ctx, tensor, 0.0f);
       }
     }
     // looks like tmp_grad_vars will not have any member but just in case

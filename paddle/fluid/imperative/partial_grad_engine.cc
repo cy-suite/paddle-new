@@ -196,7 +196,7 @@ static void GetGraphInfoBetweenTargets(
     bool is_valid = false;
     for (auto &output_pair : op->GetOutsMap()) {
       if (!output_pair.second.IsGrad()) {
-        VLOG(10) << "Continueded output for : " << op->Type();
+        VLOG(10) << "Continued output for : " << op->Type();
         continue;
       }
 
@@ -220,7 +220,7 @@ static void GetGraphInfoBetweenTargets(
     is_valid = false;
     for (auto &input_pair : op->GetInsMap()) {
       if (!input_pair.second.IsGrad()) {
-        VLOG(10) << "Continueded input for : " << op->Type();
+        VLOG(10) << "Continued input for : " << op->Type();
         continue;
       }
 
@@ -367,11 +367,11 @@ class GradientAccumulationInfo {
         grad_var_ = std::make_shared<VarBase>(true, mapped_grad_var_->Name());
         grad_var_->SetOverridedStopGradient(false);
         if (sort_gradient_) {
-          accumulator_.reset(
-              new SortedGradientAccumulator(grad_var_->SharedVar().get()));
+          accumulator_ = std::make_unique<SortedGradientAccumulator>(
+              grad_var_->SharedVar().get());
         } else {
-          accumulator_.reset(
-              new EagerGradientAccumulator(grad_var_->SharedVar().get()));
+          accumulator_ = std::make_unique<EagerGradientAccumulator>(
+              grad_var_->SharedVar().get());
         }
         accumulator_->IncreaseRefCnt();
       }
@@ -907,7 +907,7 @@ void PartialGradTask::RunEachOp(OpBase *op) {
     } else {
       for (auto &grad_var : input_pair.second) {
         if (grad_var) {
-          bool is_last;
+          bool is_last = false;
           new_inputs.emplace_back(
               ready_grad_vars_.Get(grad_var.get(), op->place(), &is_last));
           VLOG(10) << "Got ready grad var " << grad_var->Name() << " "
@@ -1031,7 +1031,7 @@ void PartialGradTask::RunEachOp(OpBase *op) {
         assign_op->SetPlace(op->place());
 
         if (auto grad_pending_node = grad_grad->GetGradNode()) {
-          assign_node->InsertGradPendingNode(std::move(grad_pending_node));
+          assign_node->InsertGradPendingNode(grad_pending_node);
         }
       }
       VLOG(10) << "Pending ops of assign is "
@@ -1080,8 +1080,8 @@ void PartialGradTask::PrepareInitialGradientAccumulators(const OpBase *op) {
       auto &accumulator = grad_accumulators_[var.get()];
 
       if (!accumulator) {
-        accumulator.reset(new GradientAccumulationInfo(
-            var, FLAGS_sort_sum_gradient, create_graph_));
+        accumulator = std::make_unique<GradientAccumulationInfo>(
+            var, FLAGS_sort_sum_gradient, create_graph_);
       }
 
       accumulator->IncreaseTotalRefCnt();

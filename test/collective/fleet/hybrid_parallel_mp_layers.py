@@ -23,7 +23,7 @@ from paddle.distributed import fleet
 
 
 def set_random_seed(seed):
-    """Set random seed for reproducability."""
+    """Set random seed for reproducibility."""
     random.seed(seed)
     np.random.seed(seed)
     paddle.seed(seed)
@@ -115,7 +115,7 @@ class SimpleEmbedding(paddle.nn.Layer):
         return output
 
 
-class TestDistTraning(unittest.TestCase):
+class TestDistTraining(unittest.TestCase):
     def setUp(self):
         strategy = fleet.DistributedStrategy()
         self.model_parallel_size = 2

@@ -24,6 +24,7 @@
 #include "paddle/cinn/frontend/syntax.h"
 #include "paddle/cinn/hlir/framework/graph.h"
 #include "paddle/cinn/hlir/framework/graph_compiler.h"
+#include "paddle/cinn/hlir/framework/graph_compiler_util.h"
 #include "paddle/cinn/hlir/framework/pass.h"
 #include "paddle/cinn/hlir/op/use_ops.h"
 #include "paddle/cinn/hlir/pass/use_pass.h"
@@ -38,7 +39,8 @@ void RunWithProgram(const Program& program,
   auto graph = std::make_shared<hlir::framework::Graph>(program, target);
   hlir::framework::ApplyPasses(graph.get(), {"OpFusionPass"});
   VLOG(1) << "graph:\n" << graph->Visualize();
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
   runtime_program->Execute();
 }
@@ -54,7 +56,7 @@ TEST(TransposeFoldingInput, FoldIntoDotBatchedCase1) {
   auto out = builder.Matmul(transpose_x, y);
   auto program = builder.Build();
 
-  common::Target target = common::DefaultNVGPUTarget();
+  cinn::common::Target target = cinn::common::DefaultNVGPUTarget();
   std::vector<std::string> input_ids;
   absl::c_transform(std::vector<absl::string_view>{x.id(), y.id()},
                     std::back_inserter(input_ids),
@@ -79,7 +81,7 @@ TEST(TransposeFoldingInput, FoldIntoDotBachedCase2) {
   auto out = builder.Matmul(x, transpose_y);
   auto program = builder.Build();
 
-  common::Target target = common::DefaultNVGPUTarget();
+  cinn::common::Target target = cinn::common::DefaultNVGPUTarget();
   std::vector<std::string> input_ids;
   absl::c_transform(std::vector<absl::string_view>{x.id(), y.id()},
                     std::back_inserter(input_ids),
@@ -105,7 +107,7 @@ TEST(TransposeFoldingInput, FoldIntoDotBachedCase3) {
   auto out = builder.Matmul(transpose_x, transpose_y);
   auto program = builder.Build();
 
-  common::Target target = common::DefaultNVGPUTarget();
+  cinn::common::Target target = cinn::common::DefaultNVGPUTarget();
   std::vector<std::string> input_ids;
   absl::c_transform(std::vector<absl::string_view>{x.id(), y.id()},
                     std::back_inserter(input_ids),
@@ -130,7 +132,7 @@ TEST(TransposeFoldingInput, FoldIntoDotCase1) {
   auto out = builder.Matmul(x, transpose_y);
   auto program = builder.Build();
 
-  common::Target target = common::DefaultNVGPUTarget();
+  cinn::common::Target target = cinn::common::DefaultNVGPUTarget();
   std::vector<std::string> input_ids;
   absl::c_transform(std::vector<absl::string_view>{x.id(), y.id()},
                     std::back_inserter(input_ids),
@@ -160,7 +162,7 @@ TEST(TransposeFoldingInput, FoldIntoDotCase2) {
   auto out = builder.Add(d, q);
   auto program = builder.Build();
 
-  common::Target target = common::DefaultNVGPUTarget();
+  cinn::common::Target target = cinn::common::DefaultNVGPUTarget();
   std::vector<std::string> input_ids;
   absl::c_transform(std::vector<absl::string_view>{c.id(), z.id()},
                     std::back_inserter(input_ids),
@@ -185,7 +187,7 @@ TEST(TransposeFoldingInput, TransposeOutInFetchIds) {
   auto out = builder.Matmul(x, transpose_y);
   auto program = builder.Build();
 
-  common::Target target = common::DefaultNVGPUTarget();
+  cinn::common::Target target = cinn::common::DefaultNVGPUTarget();
   std::vector<std::string> input_ids;
   absl::c_transform(std::vector<absl::string_view>{x.id(), y.id()},
                     std::back_inserter(input_ids),
@@ -218,7 +220,7 @@ TEST(TransposeFoldingInput, TransposeOutUsedByOtherInstrs) {
   auto out = builder.Add(transpose_y, dot);
   auto program = builder.Build();
 
-  common::Target target = common::DefaultNVGPUTarget();
+  cinn::common::Target target = cinn::common::DefaultNVGPUTarget();
   std::vector<std::string> input_ids;
   absl::c_transform(std::vector<absl::string_view>{x.id(), y.id()},
                     std::back_inserter(input_ids),
@@ -247,7 +249,7 @@ TEST(TransposeFoldingInput, TransposeTwiceWithMatmul) {
   auto dot2 = builder.Matmul(z, x_t_t);
   auto program = builder.Build();
 
-  common::Target target = common::DefaultNVGPUTarget();
+  cinn::common::Target target = cinn::common::DefaultNVGPUTarget();
   std::vector<std::string> input_ids;
   absl::c_transform(std::vector<absl::string_view>{x.id(), y.id(), z.id()},
                     std::back_inserter(input_ids),
@@ -275,7 +277,7 @@ TEST(TransposeFoldingInput, TransposeWithMultiMamtul) {
   auto out = builder.Add(dot1, dot2);
   auto program = builder.Build();
 
-  common::Target target = common::DefaultNVGPUTarget();
+  cinn::common::Target target = cinn::common::DefaultNVGPUTarget();
   std::vector<std::string> input_ids;
   absl::c_transform(std::vector<absl::string_view>{x.id(), y.id()},
                     std::back_inserter(input_ids),

@@ -18,7 +18,8 @@ import numpy as np
 
 import paddle
 import paddle.nn.functional as F
-from paddle.fluid import core
+from paddle.base import core
+from paddle.pir_utils import test_with_pir_api
 
 np.random.seed(100)
 
@@ -51,7 +52,9 @@ def ref_poisson_nll_loss(
         stirling_approx = (
             label * np.log(label) - label + 0.5 * np.log(2 * np.pi * label)
         )
-        loss_out += np.where(stirling_approx <= 1, 0, stirling_approx)
+        loss_out += np.where(
+            label > 1, stirling_approx, np.zeros_like(stirling_approx)
+        )
 
     if reduction == 'none':
         return loss_out
@@ -73,6 +76,7 @@ class TestPoissonNLLLossBasicCase(unittest.TestCase):
             else paddle.CPUPlace()
         )
 
+    @test_with_pir_api
     def test_static_case(
         self,
         dtype="float32",
@@ -88,8 +92,6 @@ class TestPoissonNLLLossBasicCase(unittest.TestCase):
         with paddle.static.program_guard(prog, startup_prog):
             input = paddle.static.data('input', self.shape, dtype)
             label = paddle.static.data('label', self.shape, dtype)
-            input.desc.set_need_check_feed(False)
-            label.desc.set_need_check_feed(False)
             out1 = F.poisson_nll_loss(
                 input,
                 label,

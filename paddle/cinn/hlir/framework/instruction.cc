@@ -22,8 +22,8 @@
 #include "paddle/cinn/runtime/flags.h"
 #include "paddle/cinn/utils/profiler.h"
 
-DECLARE_bool(cinn_sync_run);
-DECLARE_string(cinn_self_check_accuracy);
+PD_DECLARE_bool(cinn_sync_run);
+PD_DECLARE_string(cinn_self_check_accuracy);
 
 namespace cinn {
 namespace hlir {
@@ -83,7 +83,7 @@ void Instruction::UpdateArgsCache(
   args_cached_.resize(cache_size);
 
   for (int i = 0; i < cache_size; ++i) {
-    common::ArgsBuilder builder;
+    cinn::common::ArgsBuilder builder;
     std::vector<std::string> all_args = in_args_[i];
     all_args.insert(
         std::end(all_args), out_args_[i].begin(), out_args_[i].end());
@@ -175,7 +175,7 @@ void Instruction::Run(
       CHECK(fn_ptrs_[idx]) << "The LoweredFunc address should be set first by "
                               "calling SetLoweredFunc method";
       if (!dryrun) {
-        if (target_ == common::DefaultNVGPUTarget()) {
+        if (target_ == cinn::common::DefaultNVGPUTarget()) {
           ((lower_func_ptr_g)fn_ptrs_[idx])(
               static_cast<void*>(pod_args.data()), pod_args.size(), stream);
         } else {
@@ -211,7 +211,7 @@ void Instruction::Run(
                                              pod_args[1],
                                              pod_args[2],
                                              static_cast<cudaStream_t>(stream),
-                                             common::Layout::kNHWC);
+                                             cinn::common::Layout::kNHWC);
 
       } else {
         absl::flat_hash_map<std::string, int> attrs_map = {
@@ -231,7 +231,7 @@ void Instruction::Run(
                                              pod_args[1],
                                              pod_args[2],
                                              static_cast<cudaStream_t>(stream),
-                                             common::Layout::kNCHW);
+                                             cinn::common::Layout::kNCHW);
       }
     } else if (str_attrs[0] == "backward_data") {
       // w, dy, dx
@@ -322,7 +322,7 @@ void Instruction::Run(
       CHECK(fn_ptrs_[idx]) << "The LoweredFunc address should be set first by "
                               "calling SetLoweredFunc method";
       if (!dryrun) {
-        if (target_ == common::DefaultNVGPUTarget()) {
+        if (target_ == cinn::common::DefaultNVGPUTarget()) {
           ((lower_func_ptr_g)fn_ptrs_[idx])(
               static_cast<void*>(pod_args.data()), pod_args.size(), stream);
         } else {
@@ -341,7 +341,7 @@ void Instruction::Run(
     CHECK(fn_ptrs_[idx]) << "The LoweredFunc address should be set first by "
                             "calling SetLoweredFunc method";
     if (!dryrun) {
-      if (target_ == common::DefaultNVGPUTarget()) {
+      if (target_ == cinn::common::DefaultNVGPUTarget()) {
         ((lower_func_ptr_g)fn_ptrs_[idx])(
             static_cast<void*>(pod_args.data()), pod_args.size(), stream);
       } else {
@@ -363,6 +363,29 @@ void Instruction::Run(
   //     CUDA_CALL(cudaStreamSynchronize(static_cast<cudaStream_t>(stream)));
   // #endif
   //   }
+}
+
+std::string Instruction::DumpInstruction() const {
+  std::stringstream ss;
+  ss << "Instruction {" << std::endl;
+  for (size_t i = 0; i < fn_names_.size(); ++i) {
+    ss << "  Function " << fn_names_[i] << ":" << std::endl;
+    ss << "    function ptr: " << fn_ptrs_[i] << std::endl;
+
+    auto in_arg = in_args_[i];
+    std::sort(in_arg.begin(), in_arg.end());
+    for (auto& in_name : in_arg) {
+      ss << "    input: " << in_name << std::endl;
+    }
+
+    auto out_arg = out_args_[i];
+    std::sort(out_arg.begin(), out_arg.end());
+    for (auto& out_name : out_arg) {
+      ss << "    output: " << out_name << std::endl;
+    }
+  }
+  ss << "}" << std::endl;
+  return ss.str();
 }
 
 void Instruction::CheckResults(

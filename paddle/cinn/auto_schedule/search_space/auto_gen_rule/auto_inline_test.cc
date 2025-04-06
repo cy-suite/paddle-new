@@ -21,6 +21,7 @@
 #include <iostream>
 #include <vector>
 
+#include "paddle/cinn/ast_gen_ius/tensor_group.h"
 #include "paddle/cinn/auto_schedule/search_space/auto_gen_rule/auto_gen_rule.h"
 #include "paddle/cinn/auto_schedule/search_space/auto_gen_rule/test_helper.h"
 #include "paddle/cinn/cinn.h"
@@ -30,17 +31,15 @@
 #include "paddle/cinn/ir/function_base.h"
 #include "paddle/cinn/ir/ir.h"
 #include "paddle/cinn/ir/ir_base.h"
+#include "paddle/cinn/ir/ir_printer.h"
 #include "paddle/cinn/ir/schedule/ir_schedule.h"
 #include "paddle/cinn/ir/tensor.h"
-#include "paddle/cinn/ir/utils/ir_printer.h"
 #include "paddle/cinn/lang/compute.h"
 #include "paddle/cinn/lang/lower.h"
 #include "paddle/cinn/poly/stage.h"
 #include "paddle/cinn/runtime/flags.h"
 #include "paddle/cinn/utils/string.h"
 #include "test/cpp/cinn/concrete_program_builder.h"
-
-DECLARE_bool(cinn_ir_schedule);
 
 namespace cinn {
 namespace auto_schedule {
@@ -51,7 +50,7 @@ using ::cinn::hlir::framework::OpLowerer;
 TEST(AutoInline, SingleLoopInline) {
   srand(0);
   Context::Global().ResetNameId();
-  Target target = common::DefaultHostTarget();
+  Target target = cinn::common::DefaultHostTarget();
 
   Expr M(32);
 
@@ -61,16 +60,13 @@ TEST(AutoInline, SingleLoopInline) {
   ir::Tensor C = Compute(
       {M}, [&](Var i) { return B(i) + ir::Expr(1.f); }, "C");
 
-  poly::StageMap stages = CreateStages({A, B, C});
+  ast_gen_ius::TensorGroup tensor_group({A, B, C});
   std::vector<ir::LoweredFunc> funcs =
-      lang::LowerVec("TestAutoInline_SingleLoopInline",
-                     stages,
-                     {A, C},
-                     {},
-                     {},
-                     nullptr,
-                     target,
-                     true);
+      lang::LowerToAstVec("TestAutoInline_SingleLoopInline",
+
+                          {A, C},
+                          &tensor_Group,
+                          target);
   VLOG(6) << "Expr after lowering:";
   VLOG(6) << funcs[0]->body;
 
@@ -144,7 +140,7 @@ TEST(AutoInline, SingleLoopInline) {
 TEST(AutoInline, AddReluInline) {
   srand(0);
   Context::Global().ResetNameId();
-  Target target = common::DefaultHostTarget();
+  Target target = cinn::common::DefaultHostTarget();
 
   frontend::NetBuilder builder("test");
 
@@ -155,23 +151,22 @@ TEST(AutoInline, AddReluInline) {
 
   frontend::Program program = builder.Build();
 
-  FLAGS_cinn_ir_schedule = true;
   auto graph = std::make_shared<Graph>(program, target);
   hlir::framework::ApplyPass(graph.get(), "OpFusionPass");
 
   const auto& dtype_dict =
-      graph->GetAttrs<absl::flat_hash_map<std::string, common::Type>>(
+      graph->GetAttrs<absl::flat_hash_map<std::string, cinn::common::Type>>(
           "inferdtype");
   const auto& shape_dict = graph->GetAttrs<
       absl::flat_hash_map<std::string, hlir::framework::shape_t>>("infershape");
-  auto op_lowerer = std::make_unique<hlir::framework::OpLowerer>(
-      dtype_dict, shape_dict, target);
+  auto op_lowerer =
+      hlir::framework::CreateOpLowerer(dtype_dict, shape_dict, target);
 
   EXPECT_EQ(graph->fusion_groups.size(), 1UL);
   std::vector<ir::LoweredFunc> funcs =
-      op_lowerer->Lower(graph->fusion_groups[0],
-                        /*apply_op_schedule = */ false,
-                        /*apply_group_schedule=*/false);
+      op_lowerer.Lower(graph->fusion_groups[0],
+                       /*apply_op_schedule = */ false,
+                       /*apply_group_schedule=*/false);
 
   VLOG(6) << "Expr before auto inline: " << funcs[0]->body;
 
@@ -273,7 +268,7 @@ class TestAutoInline : public TestAutoGenRuleBase {};
  *     Add(Multiply(Add(Relu())))
  */
 TEST_F(TestAutoInline, SingleChain) {
-  Target target = common::DefaultNVGPUTarget();
+  Target target = cinn::common::DefaultNVGPUTarget();
   Initialize(target);
   std::vector<std::string> input_names = {
       "bias", "conv_output", "bn_scale", "bn_offset"};
@@ -348,7 +343,7 @@ TEST_F(TestAutoInline, SingleChain) {
  *     z = Multiply(Exp())
  */
 TEST_F(TestAutoInline, InlineToMultiConsumers) {
-  Target target = common::DefaultNVGPUTarget();
+  Target target = cinn::common::DefaultNVGPUTarget();
   Initialize(target);
   std::vector<std::string> input_names = {"x"};
   std::vector<std::string> output_names = {"var_2", "var_1", "var_0"};
@@ -409,7 +404,7 @@ TEST_F(TestAutoInline, InlineToMultiConsumers) {
  *     z1 = Subtract(Gather(), Add(Gather()))
  */
 TEST_F(TestAutoInline, OnlySpatialOp) {
-  Target target = common::DefaultNVGPUTarget();
+  Target target = cinn::common::DefaultNVGPUTarget();
   Initialize(target);
   std::vector<std::string> input_names = {"x", "y"};
   std::vector<std::string> output_names = {"var_6",
@@ -477,7 +472,7 @@ TEST_F(TestAutoInline, OnlySpatialOp) {
  *     y = Add(fill_constant())
  */
 TEST_F(TestAutoInline, NoReadBufferOp) {
-  Target target = common::DefaultNVGPUTarget();
+  Target target = cinn::common::DefaultNVGPUTarget();
   Initialize(target);
   std::vector<std::string> input_names = {"x"};
   std::vector<std::string> output_names = {"var_0", "fill_constant"};

@@ -43,7 +43,7 @@ RpcAgent::RpcAgent(std::string name, std::vector<WorkerInfo> infos) {
   PADDLE_ENFORCE_EQ(
       server_.AddService(rpc_service_.get(), brpc::SERVER_DOESNT_OWN_SERVICE),
       0,
-      platform::errors::Fatal("Fail to add service: %s", name));
+      platform::errors::Fatal("Fail to add service: %s", name_));
 }
 
 int RpcAgent::StartWorker() {
@@ -138,7 +138,7 @@ void RpcAgent::SetAgentInstance(std::shared_ptr<RpcAgent> agent) {
       rpc_agent_instance_,
       nullptr,
       platform::errors::Fatal(
-          "RpcAgent has been set, please don't set rpc agent repeatly."));
+          "RpcAgent has been set, please don't set rpc agent repeatedly."));
   rpc_agent_instance_ = agent;
 }
 }  // namespace distributed

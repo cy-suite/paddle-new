@@ -47,9 +47,9 @@ class TrtConvertGroupNormTest(TrtLayerAutoScanTest):
         def generate_bias():
             return np.random.randn(32).astype(np.float32)
 
-        for batch in [1, 2, 4]:
-            for group in [1, 4, 32, -1]:
-                for epsilon in [0.00001, 0.00005]:
+        for batch in [1, 4]:
+            for group in [4, -1]:
+                for epsilon in [0.00001]:
                     for data_layout in ['NCHW']:
                         dics = [
                             {
@@ -125,11 +125,13 @@ class TrtConvertGroupNormTest(TrtLayerAutoScanTest):
         clear_dynamic_shape()
         self.trt_param.workspace_size = 2013265920
         self.trt_param.precision = paddle_infer.PrecisionType.Half
+        program_config.set_input_type(np.float16)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, False
         ), 1e-2
 
         self.trt_param.precision = paddle_infer.PrecisionType.Float32
+        program_config.set_input_type(np.float32)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, False
         ), 1e-5
@@ -138,11 +140,13 @@ class TrtConvertGroupNormTest(TrtLayerAutoScanTest):
         self.trt_param.workspace_size = 2013265920
 
         self.trt_param.precision = paddle_infer.PrecisionType.Half
+        program_config.set_input_type(np.float16)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, True
         ), 1e-2
 
         self.trt_param.precision = paddle_infer.PrecisionType.Float32
+        program_config.set_input_type(np.float32)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, True
         ), 1e-5

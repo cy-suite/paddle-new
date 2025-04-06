@@ -17,7 +17,6 @@
 #include <utility>
 #include <vector>
 
-#include "gflags/gflags.h"
 #include "paddle/cinn/common/cas.h"
 #include "paddle/cinn/common/common.h"
 #include "paddle/cinn/common/context.h"
@@ -37,16 +36,15 @@
 #include "paddle/cinn/ir/tensor.h"
 #include "paddle/cinn/lang/builtin.h"
 #include "paddle/cinn/lang/compute.h"
-
-DECLARE_bool(cinn_ir_schedule);
+#include "paddle/utils/flags.h"
 
 namespace cinn {
 namespace hlir {
 namespace op {
 
-using common::_CINNValuePack_;
-using common::CINNValue;
-using common::CINNValuePack;
+using cinn::common::_CINNValuePack_;
+using cinn::common::CINNValue;
+using cinn::common::CINNValuePack;
 using framework::OpStrategy;
 using framework::shape_t;
 using framework::StrategyFunction;
@@ -73,7 +71,7 @@ ir::Tensor Reciprocal(const ir::Tensor &input, const std::string &output_name) {
       [=](const std::vector<Expr> &indice) {
         ir::Tensor out_tensor(input);
         auto e = out_tensor(indice);
-        return common::make_const(input->type(), 1.0f) / e;
+        return cinn::common::make_const(input->type(), 1.0f) / e;
       },
       output_name)};
 }

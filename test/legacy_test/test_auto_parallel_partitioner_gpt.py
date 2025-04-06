@@ -28,7 +28,6 @@ from paddle.distributed.auto_parallel.static.process_group import (
 )
 from paddle.distributed.auto_parallel.static.utils import _get_comm_group
 from paddle.distributed.fleet import auto
-from paddle.fluid import layers
 from paddle.nn.layer.transformer import _convert_param_attr_to_list
 
 paddle.enable_static()
@@ -218,18 +217,10 @@ class MultiHeadAttention(nn.Layer):
             k, v = self.compute_kv(key, value)
             return self.StaticCache(k, v)
         elif value is None:  # incremental_state
-            k = layers.fill_constant_batch_size_like(
-                input=key,
-                shape=[-1, self.num_heads, 0, self.head_dim],
-                dtype=key.dtype,
-                value=0,
-            )
-            v = layers.fill_constant_batch_size_like(
-                input=key,
-                shape=[-1, self.num_heads, 0, self.head_dim],
-                dtype=key.dtype,
-                value=0,
-            )
+            fill_shape = [-1, self.num_heads, 0, self.head_dim]
+            fill_shape[0] = paddle.shape(key)[0].item()
+            k = paddle.full(shape=fill_shape, fill_value=0, dtype=key.dtype)
+            v = paddle.full(shape=fill_shape, fill_value=0, dtype=key.dtype)
             return self.Cache(k, v)
         else:
             # incremental_state with initial value, mainly for usage like UniLM
@@ -943,14 +934,14 @@ class TestGPTPartitioner(unittest.TestCase):
             [param.name for param in startup_program.all_parameters()]
         )
         allreduce_grads = [
-            'layer_norm_5.tmp_2',
-            'layer_norm_5.tmp_2',
-            'layer_norm_5.tmp_2',
-            'layer_norm_6.tmp_2',
-            'layer_norm_7.tmp_2',
-            'layer_norm_7.tmp_2',
-            'layer_norm_7.tmp_2',
-            'layer_norm_8.tmp_2',
+            'layer_norm_0.tmp_2',
+            'layer_norm_0.tmp_2',
+            'layer_norm_0.tmp_2',
+            'layer_norm_1.tmp_2',
+            'layer_norm_2.tmp_2',
+            'layer_norm_2.tmp_2',
+            'layer_norm_2.tmp_2',
+            'layer_norm_3.tmp_2',
         ]
         process_mesh = _global_process_mesh
         mp_parallel_axis = 1

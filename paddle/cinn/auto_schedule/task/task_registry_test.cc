@@ -28,29 +28,27 @@
 #include "paddle/cinn/utils/string.h"
 #include "paddle/cinn/utils/type_defs.h"
 
-DECLARE_bool(auto_schedule_use_cost_model);
-DECLARE_bool(cinn_ir_schedule);
+PD_DECLARE_bool(auto_schedule_use_cost_model);
 
 namespace cinn {
 namespace auto_schedule {
 
 std::vector<TuneTask> CreateTasks(hlir::framework::Graph* graph,
-                                  const common::Target& target) {
+                                  const cinn::common::Target& target) {
   // create tasks
   TaskCreator task_creator;
   std::vector<TuneTask> tasks = task_creator.CreateTuneTaskOpLevel(graph);
 
   const auto& dtype_dict =
-      graph->GetAttrs<absl::flat_hash_map<std::string, common::Type>>(
+      graph->GetAttrs<absl::flat_hash_map<std::string, cinn::common::Type>>(
           "inferdtype");
   const auto& shape_dict = graph->GetAttrs<
       absl::flat_hash_map<std::string, hlir::framework::shape_t>>("infershape");
 
-  std::unique_ptr<hlir::framework::OpLowerer> op_lowerer =
-      std::make_unique<hlir::framework::OpLowerer>(
-          dtype_dict, shape_dict, target);
+  auto op_lowerer =
+      hlir::framework::CreateOpLowerer(dtype_dict, shape_dict, target);
   for (TuneTask& task : tasks) {
-    task.Initialize(shape_dict, dtype_dict, op_lowerer.get());
+    task.Initialize(shape_dict, dtype_dict, &op_lowerer);
     VLOG(3) << "Add a task with serialized_key:\n" << task.serialized_key;
   }
 
@@ -58,7 +56,7 @@ std::vector<TuneTask> CreateTasks(hlir::framework::Graph* graph,
 }
 
 std::shared_ptr<hlir::framework::Graph> CreateAddProgram(
-    const common::Target& target) {
+    const cinn::common::Target& target) {
   frontend::NetBuilder builder("test");
 
   auto a = builder.CreateInput(Float(32), {1, 64, 112, 112}, "A");
@@ -70,12 +68,11 @@ std::shared_ptr<hlir::framework::Graph> CreateAddProgram(
 
 TEST(TestTaskRegistry, basic) {
   FLAGS_auto_schedule_use_cost_model = true;
-  FLAGS_cinn_ir_schedule = true;
 
 #ifdef CINN_WITH_CUDA
-  Target target = common::DefaultNVGPUTarget();
+  Target target = cinn::common::DefaultNVGPUTarget();
 #else
-  Target target = common::DefaultHostTarget();
+  Target target = cinn::common::DefaultHostTarget();
 #endif
   std::shared_ptr<hlir::framework::Graph> graph = CreateAddProgram(target);
   std::vector<TuneTask> tasks = CreateTasks(graph.get(), target);

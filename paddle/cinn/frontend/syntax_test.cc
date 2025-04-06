@@ -23,13 +23,14 @@
 #include "paddle/cinn/frontend/optimize.h"
 #include "paddle/cinn/hlir/framework/graph.h"
 #include "paddle/cinn/hlir/framework/graph_compiler.h"
+#include "paddle/cinn/hlir/framework/graph_compiler_util.h"
 #include "paddle/cinn/hlir/framework/pass.h"
 #include "paddle/cinn/hlir/framework/scope.h"
 #include "paddle/cinn/hlir/op/use_ops.h"
 #include "paddle/cinn/hlir/pass/use_pass.h"
 #include "paddle/cinn/utils/data_util.h"
 
-DEFINE_string(model_dir, "", "");
+PD_DEFINE_string(model_dir, "", "");
 
 namespace cinn {
 namespace frontend {
@@ -62,14 +63,15 @@ TEST(syntax, basic) {
 
 TEST(syntax, program_execute_multi_elementwise_add) {
   auto program = CreateAddProgram();
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   std::unordered_set<std::string> fetch_ids;
   auto graph = Optimize(&program, fetch_ids, target);
   // auto graph    = std::make_shared<hlir::framework::Graph>(*program, target);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
   auto scope = BuildScope(target, graph);
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
   scope->Var<hlir::framework::Tensor>("A");
   scope->Var<hlir::framework::Tensor>("B");
@@ -82,13 +84,14 @@ TEST(syntax, program_execute_multi_elementwise_add) {
 
 TEST(syntax, program_execute_multi_elementwise_add2) {
   auto program = CreateAddProgram();
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   std::unordered_set<std::string> fetch_ids;
   auto graph = Optimize(&program, fetch_ids, target);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
   auto scope = BuildScope(target, graph);
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -116,12 +119,13 @@ std::get<2>(programTuple);
 
   LOG(INFO) << "program:\n" << *program;
 
-  Target target = common::DefaultHostTarget();
+  Target target = cinn::common::DefaultHostTarget();
   std::unordered_set<std::string> fetch_ids;
   auto graph = cinn::frontend::Optimize(program.get(), fetch_ids, target);
 
   scope = BuildScope(target, graph, scope);
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope,target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   auto at = scope->GetTensor("A");
@@ -133,11 +137,12 @@ std::get<2>(programTuple);
   LOG(INFO) << "scope.names: " << Join(scope->var_names(), ",");
 
   const std::string output_name = "fc_0.tmp_2";
-  auto tensor                   =
-scope->GetTensor(var_map_paddle_to_program.at(output_name)); LOG(INFO) <<
-"tensor.shape: " << utils::Join(tensor->shape().data(), ","); auto data =
-GetTensorData<float>(tensor, target); for (int i = 0; i < 10; i++) LOG(INFO) <<
-"data: " << data[i];
+  auto tensor = scope->GetTensor(var_map_paddle_to_program.at(output_name));
+  LOG(INFO) << "tensor.shape: " << utils::Join(tensor->shape().data(), ",");
+  auto data = GetTensorData<float>(tensor, target);
+  for (int i = 0; i < 10; i++) {
+    LOG(INFO) << "data: " << data[i];
+  }
 }
 */
 

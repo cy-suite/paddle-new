@@ -19,8 +19,11 @@
 #include "paddle/fluid/eager/eager_amp_auto_cast.h"
 #include "paddle/fluid/eager/eager_layout_auto_tune.h"
 #include "paddle/fluid/eager/nan_inf_utils.h"
+#include "paddle/fluid/eager/type_promotion_utils.h"
+#include "paddle/fluid/platform/place.h"
 #include "paddle/fluid/platform/profiler/event_tracing.h"
 #include "paddle/phi/api/include/sparse_api.h"
+#include "paddle/phi/common/type_promotion.h"
 #include "paddle/phi/core/flags.h"
 
 PHI_DECLARE_bool(check_nan_inf);
@@ -53,6 +56,21 @@ paddle::Tensor multiply_ad_func(const paddle::Tensor& x,
           paddle::imperative::AmpLevel::O0);
       return multiply_ad_func(new_x, new_y);
     }
+  }
+
+  // Type promotion Logic
+  if (phi::NeedTypePromotion(x.dtype(), y.dtype())) {
+    VLOG(5) << "got different data type, run type promotion automatically.";
+    LOG_FIRST_N(WARNING, 1)
+        << "got different data type, run type promotion "
+           "automatically, this may cause data type been changed.";
+    auto op_name = phi::TransToFluidOpName("multiply");
+    auto promotion_type = phi::GetPromoteDtype(op_name, x.dtype(), y.dtype());
+
+    auto new_x = egr::PromoteCast("x", x, promotion_type);
+    auto new_y = egr::PromoteCast("y", y, promotion_type);
+
+    return multiply_ad_func(new_x, new_y);
   }
 
   // Layout autotune
@@ -132,8 +150,8 @@ paddle::Tensor multiply_ad_func(const paddle::Tensor& x,
     egr::EagerUtils::PassStopGradient(false, out_autograd_meta);
 
     // Node Construction
-    auto grad_node =
-        std::shared_ptr<MultiplyGradNode>(new MultiplyGradNode(1, 2));
+    auto grad_node = std::shared_ptr<MultiplyGradNode>(  // NOLINT
+        new MultiplyGradNode(1, 2));
     // Set for forward trace
     if (FLAGS_check_nan_inf) {
       grad_node->SetForwardTrace(egr::Controller::Instance().GetPythonStack());
@@ -262,6 +280,33 @@ paddle::Tensor& multiply__ad_func(paddle::Tensor& x,  // NOLINT
     VLOG(3) << paddle::string::Sprintf(INPUT_PRINT_TEMPLATE, input_str);
   }
 
+  bool trace_backward = egr::Controller::Instance().HasGrad();
+  bool require_any_grad = egr::EagerUtils::ComputeRequireGrad(
+      trace_backward, x_autograd_meta, y_autograd_meta);
+
+  // Node Declaration
+  std::shared_ptr<MultiplyGradNode> grad_node;
+  // Set grad_node before API Call
+  if (require_any_grad) {
+    paddle::platform::RecordEvent node_creation_record_event(
+        "multiply node_creation",
+        paddle::platform::TracerEventType::OperatorInner,
+        1);
+
+    grad_node = std::shared_ptr<MultiplyGradNode>(  // NOLINT
+        new MultiplyGradNode(1, 2));
+    // Set for forward trace
+    if (FLAGS_check_nan_inf) {
+      grad_node->SetForwardTrace(egr::Controller::Instance().GetPythonStack());
+    }
+    // SetAttributes if needed
+    grad_node->SetAttributeaxis(-1);
+    // Set TensorWrappers for Forward Inputs if needed
+    auto x_clone = paddle::experimental::assign(x);
+    grad_node->SetTensorWrapperx(x_clone);
+    grad_node->SetTensorWrappery(y);
+  }
+
   // Forward API Call
   auto& api_result = paddle::experimental::multiply_(x, y);
   // Check NaN and Inf if needed
@@ -275,10 +320,6 @@ paddle::Tensor& multiply__ad_func(paddle::Tensor& x,  // NOLINT
 
   // Get Output AutoGradMeta
   egr::AutogradMeta* out_autograd_meta = egr::EagerUtils::autograd_meta(&out);
-  bool trace_backward = egr::Controller::Instance().HasGrad();
-  bool require_any_grad = egr::EagerUtils::ComputeRequireGrad(
-      trace_backward, x_autograd_meta, y_autograd_meta);
-
   // Check Inplace if needed
 
   egr::EagerUtils::CheckInplace(x, x_autograd_meta, require_any_grad);
@@ -289,25 +330,7 @@ paddle::Tensor& multiply__ad_func(paddle::Tensor& x,  // NOLINT
 
   // Node Creation
   if (require_any_grad) {
-    paddle::platform::RecordEvent node_creation_record_event(
-        "multiply node_creation",
-        paddle::platform::TracerEventType::OperatorInner,
-        1);
-
     egr::EagerUtils::PassStopGradient(false, out_autograd_meta);
-
-    // Node Construction
-    auto grad_node =
-        std::shared_ptr<MultiplyGradNode>(new MultiplyGradNode(1, 2));
-    // Set for forward trace
-    if (FLAGS_check_nan_inf) {
-      grad_node->SetForwardTrace(egr::Controller::Instance().GetPythonStack());
-    }
-    // SetAttributes if needed
-    grad_node->SetAttributeaxis(-1);
-    // Set TensorWrappers for Forward Inputs if needed
-    grad_node->SetTensorWrapperx(x);
-    grad_node->SetTensorWrappery(y);
     // SetGradOutMeta & SetEdges
     grad_node->SetGradOutMeta(x, 0);
     grad_node->SetGradOutMeta(y, 1);
@@ -382,6 +405,21 @@ paddle::Tensor multiply_ad_func(const paddle::Tensor& x,
     }
   }
 
+  // Type promotion Logic
+  if (phi::NeedTypePromotion(x.dtype(), y.dtype())) {
+    VLOG(5) << "got different data type, run type promotion automatically.";
+    LOG_FIRST_N(WARNING, 1)
+        << "got different data type, run type promotion "
+           "automatically, this may cause data type been changed.";
+    auto op_name = phi::TransToFluidOpName("multiply");
+    auto promotion_type = phi::GetPromoteDtype(op_name, x.dtype(), y.dtype());
+
+    auto new_x = egr::PromoteCast("x", x, promotion_type);
+    auto new_y = egr::PromoteCast("y", y, promotion_type);
+
+    return multiply_ad_func(new_x, new_y);
+  }
+
   // Layout autotune
 
   if (egr::Controller::Instance().UseLayoutAutoTune()) {
@@ -429,7 +467,6 @@ paddle::Tensor multiply_ad_func(const paddle::Tensor& x,
     input_str += input_y_str;
     VLOG(3) << paddle::string::Sprintf(INPUT_PRINT_TEMPLATE, input_str);
   }
-
   // Forward API Call
   auto api_result = paddle::experimental::sparse::multiply(x, y);
   // Check NaN and Inf if needed
@@ -459,8 +496,8 @@ paddle::Tensor multiply_ad_func(const paddle::Tensor& x,
     egr::EagerUtils::PassStopGradient(false, out_autograd_meta);
 
     // Node Construction
-    auto grad_node =
-        std::shared_ptr<MultiplyGradNode>(new MultiplyGradNode(1, 2));
+    auto grad_node = std::shared_ptr<MultiplyGradNode>(  // NOLINT
+        new MultiplyGradNode(1, 2));
     // Set for forward trace
     if (FLAGS_check_nan_inf) {
       grad_node->SetForwardTrace(egr::Controller::Instance().GetPythonStack());

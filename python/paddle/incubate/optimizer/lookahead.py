@@ -13,11 +13,13 @@
 # limitations under the License.
 
 import paddle
-from paddle.fluid import framework, unique_name
-from paddle.fluid.dygraph import base as imperative_base
-from paddle.fluid.framework import Variable
-from paddle.fluid.layer_helper import LayerHelper
+from paddle.base import framework, unique_name
+from paddle.base.dygraph import base as imperative_base
+from paddle.base.framework import Variable
+from paddle.base.layer_helper import LayerHelper
+from paddle.framework import in_pir_mode
 from paddle.optimizer import Optimizer
+from paddle.pir.core import create_parameter
 
 __all__ = []
 
@@ -40,8 +42,8 @@ class LookAhead(Optimizer):
 
     Args:
         inner_optimizer (Optimizer): The optimizer that update fast params step by step.
-        alpha (float, optinal): The learning rate of Lookahead. The default value is 0.5.
-        k (int, optinal): The slow params is updated every k steps. The default value is 5.
+        alpha (float, optional): The learning rate of Lookahead. The default value is 0.5.
+        k (int, optional): The slow params is updated every k steps. The default value is 5.
         name (str, optional): Normally there is no need for user to set this property.
             For more information, please refer to :ref:`api_guide_Name`.
             The default value is None.
@@ -50,66 +52,63 @@ class LookAhead(Optimizer):
 
         .. code-block:: python
 
-            import numpy as np
-            import paddle
-            import paddle.nn as nn
+            >>> import numpy as np
+            >>> import paddle
+            >>> import paddle.nn as nn
 
-            BATCH_SIZE = 16
-            BATCH_NUM = 4
-            EPOCH_NUM = 4
+            >>> BATCH_SIZE = 16
+            >>> BATCH_NUM = 4
+            >>> EPOCH_NUM = 4
 
-            IMAGE_SIZE = 784
-            CLASS_NUM = 10
-            # define a random dataset
-            class RandomDataset(paddle.io.Dataset):
-                def __init__(self, num_samples):
-                    self.num_samples = num_samples
+            >>> IMAGE_SIZE = 784
+            >>> CLASS_NUM = 10
+            >>> # define a random dataset
+            >>> class RandomDataset(paddle.io.Dataset):
+            ...     def __init__(self, num_samples):
+            ...         self.num_samples = num_samples
+            ...     def __getitem__(self, idx):
+            ...         image = np.random.random([IMAGE_SIZE]).astype('float32')
+            ...         label = np.random.randint(0, CLASS_NUM - 1,
+            ...                                 (1, )).astype('int64')
+            ...         return image, label
+            ...     def __len__(self):
+            ...         return self.num_samples
 
-                def __getitem__(self, idx):
-                    image = np.random.random([IMAGE_SIZE]).astype('float32')
-                    label = np.random.randint(0, CLASS_NUM - 1,
-                                            (1, )).astype('int64')
-                    return image, label
+            >>> class LinearNet(nn.Layer):
+            ...     def __init__(self):
+            ...         super().__init__()
+            ...         self._linear = nn.Linear(IMAGE_SIZE, CLASS_NUM)
+            ...         self.bias = self._linear.bias
+            ...     @paddle.jit.to_static
+            ...     def forward(self, x):
+            ...         return self._linear(x)
 
-                def __len__(self):
-                    return self.num_samples
+            >>> def train(layer, loader, loss_fn, opt):
+            ...     for epoch_id in range(EPOCH_NUM):
+            ...         for batch_id, (image, label) in enumerate(loader()):
+            ...             out = layer(image)
+            ...             loss = loss_fn(out, label)
+            ...             loss.backward()
+            ...             opt.step()
+            ...             opt.clear_grad()
+            ...             print("Train Epoch {} batch {}: loss = {}".format(
+            ...                 epoch_id, batch_id, np.mean(loss.numpy())))
+            >>> layer = LinearNet()
+            >>> loss_fn = nn.CrossEntropyLoss()
+            >>> optimizer = paddle.optimizer.SGD(learning_rate=0.1, parameters=layer.parameters())
+            >>> lookahead = paddle.incubate.LookAhead(optimizer, alpha=0.2, k=5)
 
-            class LinearNet(nn.Layer):
-                def __init__(self):
-                    super().__init__()
-                    self._linear = nn.Linear(IMAGE_SIZE, CLASS_NUM)
-                    self.bias = self._linear.bias
+            >>> # create data loader
+            >>> dataset = RandomDataset(BATCH_NUM * BATCH_SIZE)
+            >>> loader = paddle.io.DataLoader(
+            ...     dataset,
+            ...     batch_size=BATCH_SIZE,
+            ...     shuffle=True,
+            ...     drop_last=True,
+            ...     num_workers=2)
 
-                @paddle.jit.to_static
-                def forward(self, x):
-                    return self._linear(x)
-
-            def train(layer, loader, loss_fn, opt):
-                for epoch_id in range(EPOCH_NUM):
-                    for batch_id, (image, label) in enumerate(loader()):
-                        out = layer(image)
-                        loss = loss_fn(out, label)
-                        loss.backward()
-                        opt.step()
-                        opt.clear_grad()
-                        print("Train Epoch {} batch {}: loss = {}".format(
-                            epoch_id, batch_id, np.mean(loss.numpy())))
-
-            layer = LinearNet()
-            loss_fn = nn.CrossEntropyLoss()
-            optimizer = paddle.optimizer.SGD(learning_rate=0.1, parameters=layer.parameters())
-            lookahead = paddle.incubate.LookAhead(optimizer, alpha=0.2, k=5)
-
-            # create data loader
-            dataset = RandomDataset(BATCH_NUM * BATCH_SIZE)
-            loader = paddle.io.DataLoader(
-                dataset,
-                batch_size=BATCH_SIZE,
-                shuffle=True,
-                drop_last=True,
-                num_workers=2)
-
-            train(layer, loader, loss_fn, lookahead)
+            >>> # doctest: +SKIP('The run time is too long to pass the CI check.')
+            >>> train(layer, loader, loss_fn, lookahead)
 
     """
     _slow_str = "slow"
@@ -124,7 +123,9 @@ class LookAhead(Optimizer):
         self.inner_optimizer = inner_optimizer
         if self.inner_optimizer._parameter_list is None:
             parameters = (
-                framework.default_main_program().global_block().all_parameters()
+                paddle.static.default_main_program()
+                .global_block()
+                .all_parameters()
             )
         else:
             parameters = self.inner_optimizer._parameter_list
@@ -161,16 +162,16 @@ class LookAhead(Optimizer):
 
             .. code-block:: python
 
-                import paddle
-                inp = paddle.rand([1,10], dtype="float32")
-                linear = paddle.nn.Linear(10, 1)
-                out = linear(inp)
-                loss = paddle.mean(out)
-                sgd = paddle.optimizer.SGD(learning_rate=0.1,parameters=linear.parameters())
-                lookahead = paddle.incubate.LookAhead(sgd, alpha=0.2, k=5)
-                loss.backward()
-                lookahead.step()
-                lookahead.clear_grad()
+                >>> import paddle
+                >>> inp = paddle.rand([1,10], dtype="float32")
+                >>> linear = paddle.nn.Linear(10, 1)
+                >>> out = linear(inp)
+                >>> loss = paddle.mean(out)
+                >>> sgd = paddle.optimizer.SGD(learning_rate=0.1,parameters=linear.parameters())
+                >>> lookahead = paddle.incubate.LookAhead(sgd, alpha=0.2, k=5)
+                >>> loss.backward()
+                >>> lookahead.step()
+                >>> lookahead.clear_grad()
 
         """
         self.inner_optimizer.step()
@@ -189,40 +190,64 @@ class LookAhead(Optimizer):
         )
 
     def _create_accumulators(self, block, parameters):
-        assert isinstance(block, framework.Block)
+        assert isinstance(block, (framework.Block, paddle.pir.Block))
 
         for p in parameters:
             self._add_accumulator(self._slow_str, p)
 
     def _increment_global_var(self):
-        if self._global_step_var is None:
-            self._global_step_var = paddle.static.create_global_var(
-                name=unique_name.generate("lookahead_step"),
-                shape=[1],
-                value=0,
-                dtype='int32',
-                persistable=True,
-            )
+        if in_pir_mode():
+            if self._global_step_var is None:
+                self._global_step_var = create_parameter(
+                    dtype='int32',
+                    shape=[1],
+                    name=unique_name.generate("lookahead_step"),
+                    trainable=False,
+                    initializer=paddle.nn.initializer.ConstantInitializer(
+                        value=0.0, force_cpu=False
+                    ),
+                )
+            self._global_step_var = paddle.increment(self._global_step_var, 1.0)
+        else:
+            if self._global_step_var is None:
+                self._global_step_var = paddle.static.create_global_var(
+                    name=unique_name.generate("lookahead_step"),
+                    shape=[1],
+                    value=0,
+                    dtype='int32',
+                    persistable=True,
+                )
 
-        self.helper.append_op(
-            type='increment',
-            inputs={'X': [self._global_step_var]},
-            outputs={'Out': [self._global_step_var]},
-            attrs={'step': 1.0},
-        )
+            self.helper.append_op(
+                type='increment',
+                inputs={'X': [self._global_step_var]},
+                outputs={'Out': [self._global_step_var]},
+                attrs={'step': 1.0},
+            )
 
     def _append_optimize_op(self, block, param_and_grad):
         one_var = paddle.ones(shape=[1], dtype='int32', name='lookahead_ones')
         zero_var = paddle.zeros(
             shape=[1], dtype='int32', name='lookahead_zeros'
         )
-        k_var = paddle.static.create_global_var(
-            name=unique_name.generate("lookahead_k"),
-            shape=[1],
-            value=self.k,
-            dtype='int32',
-            persistable=True,
-        )
+        if in_pir_mode():
+            k_var = create_parameter(
+                dtype='int32',
+                shape=[1],
+                name=unique_name.generate("lookahead_k"),
+                trainable=False,
+                initializer=paddle.nn.initializer.ConstantInitializer(
+                    value=float(self.k), force_cpu=False
+                ),
+            )
+        else:
+            k_var = paddle.static.create_global_var(
+                name=unique_name.generate("lookahead_k"),
+                shape=[1],
+                value=self.k,
+                dtype='int32',
+                persistable=True,
+            )
 
         mod = paddle.remainder(self._global_step_var, k_var)
 
@@ -253,9 +278,9 @@ class LookAhead(Optimizer):
 
         Args:
             loss (Tensor): A ``Tensor`` containing the value to minimize.
-            startup_program (Program, optional): :ref:`api_fluid_Program` for
+            startup_program (Program, optional): :ref:`api_paddle_static_Program` for
                 initializing parameters in ``parameters``. The default value
-                is None, at this time :ref:`api_fluid_default_startup_program` will be used.
+                is None, at this time :ref:`api_paddle_static_default_startup_program` will be used.
             parameters (list, optional): List of ``Tensor`` or ``Tensor.name`` to update
                 to minimize ``loss``. The default value is None, at this time all parameters
                 will be updated.
@@ -274,20 +299,22 @@ class LookAhead(Optimizer):
 
             .. code-block:: python
 
-                import paddle
+                >>> import paddle
 
-                inp = paddle.rand([1, 10], dtype="float32")
-                linear = paddle.nn.Linear(10, 1)
-                out = linear(inp)
-                loss = paddle.mean(out)
-                sgd = paddle.optimizer.SGD(learning_rate=0.1,parameters=linear.parameters())
-                lookahead = paddle.incubate.LookAhead(sgd, alpha=0.2, k=5)
-                loss.backward()
-                lookahead.minimize(loss)
-                lookahead.clear_grad()
+                >>> inp = paddle.rand([1, 10], dtype="float32")
+                >>> linear = paddle.nn.Linear(10, 1)
+                >>> out = linear(inp)
+                >>> loss = paddle.mean(out)
+                >>> sgd = paddle.optimizer.SGD(learning_rate=0.1,parameters=linear.parameters())
+                >>> lookahead = paddle.incubate.LookAhead(sgd, alpha=0.2, k=5)
+                >>> loss.backward()
+                >>> lookahead.minimize(loss)
+                >>> lookahead.clear_grad()
 
         """
-        assert isinstance(loss, Variable), "The loss should be an Tensor."
+        assert isinstance(
+            loss, (Variable, paddle.pir.Value)
+        ), "The loss should be an Tensor."
 
         # Apply inner optimizer to the main_program
         optimize_ops, params_grads = self.inner_optimizer.minimize(

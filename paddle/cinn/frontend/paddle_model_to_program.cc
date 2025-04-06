@@ -21,6 +21,8 @@
 #include "paddle/cinn/frontend/paddle/pb/program_desc.h"
 #include "paddle/cinn/hlir/framework/node.h"
 
+PD_DECLARE_double(cinn_infer_model_version);
+
 namespace cinn {
 namespace frontend {
 using utils::Join;
@@ -96,7 +98,8 @@ void PaddleModelToProgram::AddOpMapper_scale() {
       CHECK(scale_tensor_var) << "No scale tensor found in the scope";
       auto& scale_tensor =
           absl::get<hlir::framework::Tensor>(*scale_tensor_var);
-      scale = scale_tensor->mutable_data<float>(common::DefaultHostTarget())[0];
+      scale = scale_tensor->mutable_data<float>(
+          cinn::common::DefaultHostTarget())[0];
     }
     if (op_desc.HasAttr("bias")) {  // the old model format
       bias = op_desc.GetAttr<float>("bias");
@@ -740,14 +743,25 @@ Variable PaddleModelToProgram::GetVar(const std::string& name) {
 std::unique_ptr<Program> PaddleModelToProgram::operator()(
     const std::string& model_dir, bool is_combined) {
   paddle::cpp::ProgramDesc program_desc;
-  paddle::LoadModelPb(model_dir,
-                      "__model__",
-                      "",
-                      scope_,
-                      &program_desc,
-                      is_combined,
-                      false,
-                      target_);
+  if (FLAGS_cinn_infer_model_version < 2.0) {
+    paddle::LoadModelPb(model_dir,
+                        "/__model__",
+                        "/params",
+                        scope_,
+                        &program_desc,
+                        is_combined,
+                        false,
+                        target_);
+  } else {
+    paddle::LoadModelPb(model_dir,
+                        ".pdmodel",
+                        ".pdiparams",
+                        scope_,
+                        &program_desc,
+                        is_combined,
+                        false,
+                        target_);
+  }
   CHECK_EQ(program_desc.BlocksSize(), 1)
       << "CINN can only support the model with a single block";
   auto* block_desc = program_desc.GetBlock<paddle::cpp::BlockDesc>(0);

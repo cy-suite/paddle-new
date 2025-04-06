@@ -28,13 +28,13 @@ class SumOneDNNHandler : public OneDNNHandlerNoCachingT<T, dnnl::sum> {
 
       : OneDNNHandlerNoCachingT<T, dnnl::sum>(engine, cpu_place),
         num_inputs_(0) {
-    auto dst_tz = vectorize<int64_t>(out->dims());
+    auto dst_tz = common::vectorize<int64_t>(out->dims());
     auto src_tz = dst_tz;
 
     std::vector<dnnl::memory::desc> srcs_md;
     srcs_md.reserve(x.size());
-    for (size_t i = 0; i < x.size(); i++) {
-      auto* input_it = (static_cast<const DenseTensor*>(x[i]));
+    for (auto item : x) {
+      auto* input_it = (static_cast<const DenseTensor*>(item));
       if (input_it->numel() == 0) {
         continue;
       }
@@ -58,11 +58,11 @@ class SumOneDNNHandler : public OneDNNHandlerNoCachingT<T, dnnl::sum> {
 
   using OneDNNHandlerNoCachingT<T, dnnl::sum>::AcquireDstMemory;
 
-  std::shared_ptr<dnnl::memory> AcquireDstMemory(void) {
+  std::shared_ptr<dnnl::memory> AcquireDstMemory() {
     return this->AcquireMemoryFromPrimitive(this->fwd_pd_->dst_desc());
   }
 
-  inline int GetNumInputs(void) { return num_inputs_; }
+  inline int GetNumInputs() { return num_inputs_; }
 
  private:
   int num_inputs_;
@@ -92,8 +92,8 @@ void AddNKernel(const Context& dev_ctx,
   std::vector<std::shared_ptr<dnnl::memory>> srcs_mem;
   srcs_mem.reserve(handler.GetNumInputs());
   int input_index = 0;
-  for (size_t i = 0; i < x.size(); i++) {
-    auto* input_it = (static_cast<const DenseTensor*>(x[i]));
+  for (auto item : x) {
+    auto* input_it = (static_cast<const DenseTensor*>(item));
     if (input_it->numel() == 0) {
       continue;
     }

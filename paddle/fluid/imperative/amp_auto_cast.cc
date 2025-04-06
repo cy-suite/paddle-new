@@ -17,6 +17,7 @@
 #include <memory>
 #include <string>
 
+#include "paddle/fluid/eager/api/utils/global_utils.h"
 #include "paddle/fluid/eager/eager_tensor.h"
 #include "paddle/fluid/imperative/tracer.h"
 #include "paddle/fluid/imperative/type_defs.h"
@@ -51,37 +52,42 @@ OpSupportedInfos(const std::string& place,
       {"GPU", &platform::is_gpu_place},
       {"CPU", &platform::is_cpu_place},
       {"XPU", &platform::is_xpu_place},
+      {"CUSTOM_DEVICE", &platform::is_custom_place},
+#ifdef PADDLE_WITH_CUSTOM_DEVICE
+      {query_place, &platform::is_custom_place},
+#endif
   };
-  PADDLE_ENFORCE_NE(
-      is_target_place.count(query_place),
-      0,
-      platform::errors::InvalidArgument(
-          "The argument `place` should be 'GPU', 'CPU', 'XPU', but got '%s'.",
-          place));
+  PADDLE_ENFORCE_NE(is_target_place.count(query_place),
+                    0,
+                    platform::errors::InvalidArgument(
+                        "The argument `place` should be 'GPU', 'CPU', 'XPU' or "
+                        "other Custom Device, but got '%s'.",
+                        place));
 
   std::unordered_set<std::string> all_ops;
   const auto& op_info = framework::OpInfoMap::Instance().map();
-  for (auto it = op_info.begin(); it != op_info.end(); it++) {
-    all_ops.emplace(it->first);
+  for (const auto& item : op_info) {
+    const std::string op_type = item.first;
+    // The dtype of custom op is RAW(runtime decided type), skip it since we
+    // cannot determine its supported dtype here.
+    if (egr::Controller::Instance().GetOpMetaInfoMap().count(op_type)) {
+      VLOG(6) << "Skip custom op " << op_type << " for checking amp supported!";
+      continue;
+    }
+    all_ops.emplace(op_type);
   }
 
   std::unordered_set<std::string> supported_ops;
   auto& all_kernels = framework::OperatorWithKernel::AllOpKernels();
-  for (auto it = all_kernels.begin(); it != all_kernels.end(); it++) {
-    for (auto& kernel_type : it->second) {
+  for (auto& all_kernel : all_kernels) {
+    for (auto& kernel_type : all_kernel.second) {
       if (is_target_place[query_place](kernel_type.first.place_) &&
           kernel_type.first.data_type_ == dtype) {
-        supported_ops.emplace(it->first);
+        supported_ops.emplace(all_kernel.first);
       }
     }
   }
 
-#ifdef PADDLE_WITH_CUSTOM_DEVICE
-  auto is_custom_place = [&](const std::string& place) {
-    return is_target_place.count(place) && place != "CPU" && place != "GPU" &&
-           place != "XPU";
-  };
-#endif
   auto phi_kernels = phi::KernelFactory::Instance().kernels();
   for (auto& kernel_pair : phi_kernels) {
     auto op_type = phi::TransToFluidOpName(kernel_pair.first);
@@ -90,15 +96,6 @@ OpSupportedInfos(const std::string& place,
           all_ops.count(op_type) == 0) {
         continue;
       }
-#ifdef PADDLE_WITH_CUSTOM_DEVICE
-      if (info_pair.first.backend() == phi::Backend::CUSTOM) {
-        if (is_custom_place(query_place)) {
-          VLOG(4) << op_type << " " << supported_ops.size();
-          supported_ops.emplace(op_type);
-        }
-        continue;
-      }
-#endif
       if (is_target_place[query_place](
               phi::TransToPhiPlace(info_pair.first.backend(), false))) {
         VLOG(8) << op_type << " " << supported_ops.size();
@@ -131,7 +128,9 @@ AutoCastGuard::AutoCastGuard(std::shared_ptr<Tracer> tracer, AmpLevel level)
   }
 }
 
-AutoCastGuard::~AutoCastGuard() { tracer_->SetAmpLevel(pre_amp_level_); }
+AutoCastGuard::~AutoCastGuard() {  // NOLINT
+  tracer_->SetAmpLevel(pre_amp_level_);
+}
 
 AmpOperators::AmpOperators()
     : allow_ops_(new std::unordered_set<std::string>()),
@@ -163,7 +162,7 @@ AmpOperators::AmpOperators()
           << unsupported_bf16_ops_->size();
 }
 
-AmpOperators::~AmpOperators() {}
+AmpOperators::~AmpOperators() = default;
 
 AmpOperators& AmpOperators::Instance() {
   static AmpOperators instance;
@@ -400,7 +399,7 @@ NameVarMap<VarType> AutoCastInputs(const std::string& op_type,
           pair.first != "Mask" && dst_type == framework::proto::VarType::FP32) {
         continue;
       }
-      if ((op_type == "fused_attention" || op_type == "fused_feedforwad") &&
+      if ((op_type == "fused_attention" || op_type == "fused_feedforward") &&
           dst_type == framework::proto::VarType::FP32) {
         if (pair.first != "LnScale" && pair.first != "LnBias" &&
             pair.first != "Ln2Scale" && pair.first != "Ln2Bias" &&

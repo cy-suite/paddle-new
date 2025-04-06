@@ -34,10 +34,6 @@ class DistributedDataLoaderBase(metaclass=abc.ABCMeta):
     def __iter__(self):
         raise NotImplementedError
 
-    @abc.abstractmethod
-    def __next__(self):
-        raise NotImplementedError
-
 
 class DistributedDataLoaderFromGenerator(DistributedDataLoaderBase):
     def __init__(
@@ -203,7 +199,7 @@ class DistributedDataLoaderFromGenerator(DistributedDataLoaderBase):
 
                 yield partial_data
 
-        dataloader = paddle.fluid.io.DataLoader.from_generator(
+        dataloader = paddle.base.io.DataLoader.from_generator(
             feed_list=self.feed_list,
             capacity=self.capacity,
             use_double_buffer=self.use_double_buffer,
@@ -258,30 +254,26 @@ class DistributedDataLoader(DistributedDataLoaderBase):
         self.dp_world_sizes = data_parallel_world_size
         self.dp_ranks = data_parallel_rank
         self.split_data = split_data
-        # TODO: rank info
-        self.batch_sampler = DistributedBatchSampler(
-            self.dataset,
-            self.batch_size,
-            self.dp_world_sizes[0],
-            self.dp_ranks[0],
-            self.shuffle,
-            self.drop_last,
-        )
-        self._inner_dataloader = self._create_inner_dataloader()
 
-    def __iter__(self):
-        return self
+        if self.batch_size is None:
+            self.batch_sampler = None
+        else:
+            self.batch_sampler = DistributedBatchSampler(
+                dataset=self.dataset,
+                batch_size=self.batch_size,
+                num_replicas=self.dp_world_sizes[0],
+                rank=self.dp_ranks[0],
+                shuffle=self.shuffle,
+                drop_last=self.drop_last,
+            )
 
-    def __next__(self):
-        return next(self.data)
-
-    def _create_inner_dataloader(self):
-        dataloader = paddle.io.DataLoader(
+        self._dataloader = paddle.io.DataLoader(
             self.dataset,
             feed_list=self.feed_list,
             places=self.places,
             return_list=self.return_list,
             batch_sampler=self.batch_sampler,
+            batch_size=1 if self.batch_sampler else self.batch_size,
             collate_fn=self.collate_fn,
             num_workers=self.num_workers,
             use_buffer_reader=self.use_buffer_reader,
@@ -289,6 +281,12 @@ class DistributedDataLoader(DistributedDataLoaderBase):
             timeout=self.timeout,
             worker_init_fn=self.worker_init_fn,
         )
-        self.data = (x for x in dataloader)
 
-        return dataloader
+    def __len__(self):
+        return len(self._dataloader)
+
+    def __iter__(self):
+        return self._dataloader.__iter__()
+
+    def __call__(self):
+        return self._dataloader.__iter__()

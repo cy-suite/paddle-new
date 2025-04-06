@@ -27,16 +27,18 @@
 #include "paddle/cinn/frontend/var_type_utils.h"
 #include "paddle/cinn/hlir/op/use_ops.h"
 
+PD_DECLARE_double(cinn_infer_model_version);
+
 namespace cinn {
 namespace frontend {
 
 using cinn::utils::Attribute;
 
 PaddleModelConvertor::PaddleModelConvertor()
-    : PaddleModelConvertor(common::DefaultTarget(), nullptr, nullptr) {}
+    : PaddleModelConvertor(cinn::common::DefaultTarget(), nullptr, nullptr) {}
 
 PaddleModelConvertor::PaddleModelConvertor(
-    const common::Target& target,
+    const cinn::common::Target& target,
     std::shared_ptr<NetBuilder> builder,
     std::shared_ptr<hlir::framework::Scope> scope)
     : target_(target), builder_(builder), scope_(scope) {
@@ -123,14 +125,25 @@ Program PaddleModelConvertor::LoadModel(
     bool is_combined,
     const std::unordered_map<std::string, std::vector<int64_t>>& feed) {
   paddle::cpp::ProgramDesc program_desc;
-  paddle::LoadModelPb(model_dir,
-                      "__model__",
-                      "",
-                      scope_.get(),
-                      &program_desc,
-                      is_combined,
-                      false,
-                      target_);
+  if (FLAGS_cinn_infer_model_version < 2.0) {
+    paddle::LoadModelPb(model_dir,
+                        "/__model__",
+                        "/params",
+                        scope_.get(),
+                        &program_desc,
+                        is_combined,
+                        false,
+                        target_);
+  } else {
+    paddle::LoadModelPb(model_dir,
+                        ".pdmodel",
+                        ".pdiparams",
+                        scope_.get(),
+                        &program_desc,
+                        is_combined,
+                        false,
+                        target_);
+  }
   CHECK_EQ(program_desc.BlocksSize(), 1)
       << "CINN can only support the model with a single block";
   auto* block_desc = program_desc.GetBlock<paddle::cpp::BlockDesc>(0);
@@ -228,7 +241,7 @@ Program PaddleModelConvertor::operator()() { return builder_->Build(); }
 void PaddleModelConvertor::CreateInput(const std::string& dtype,
                                        const cinn::utils::ShapeType& shape,
                                        const std::string& name) {
-  OpMapperContext::FeedInfo feed_info = {shape, common::Str2Type(dtype)};
+  OpMapperContext::FeedInfo feed_info = {shape, cinn::common::Str2Type(dtype)};
 
   ctx_->AddFeedInfo(name, feed_info);
   RunOp("feed", {}, {{"Out", {name}}}, {});

@@ -23,7 +23,7 @@
 #include <typeinfo>
 #include <vector>
 
-#include "paddle/phi/api/ext/exception.h"
+#include "paddle/common/exception.h"
 #include "paddle/phi/capi/include/c_device_context.h"
 #include "paddle/phi/capi/include/c_infer_meta_context.h"
 #include "paddle/phi/capi/include/c_int_array.h"
@@ -297,6 +297,26 @@ class DeviceContext : public WrapperBase<PD_DeviceContext> {
                                        &status);
     PD_CHECK_STATUS(status);
     return static_cast<T*>(ptr);
+  }
+
+  uint64_t seed() const {
+    C_Status status;
+    auto seed_val = PD_DeviceContextGetSeed(raw_data(), &status);
+    PD_CHECK_STATUS(status);
+    return seed_val;
+  }
+
+  void seed(uint64_t seed_val) const {
+    C_Status status;
+    PD_DeviceContextSetSeed(raw_data(), seed_val, &status);
+    PD_CHECK_STATUS(status);
+  }
+
+  uint64_t random() const {
+    C_Status status;
+    auto rand_val = PD_DeviceContextGetRandom(raw_data(), &status);
+    PD_CHECK_STATUS(status);
+    return rand_val;
   }
 };
 

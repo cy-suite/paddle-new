@@ -15,9 +15,11 @@
 import unittest
 
 import numpy as np
+from op_test import OpTest, convert_float_to_uint16
 
 import paddle
-from paddle.fluid import core
+from paddle.base import core
+from paddle.pir_utils import test_with_pir_api
 
 np.random.seed(102)
 
@@ -78,6 +80,7 @@ class TestNanmedian(unittest.TestCase):
             [0, 2, 1, 3],
         ]
 
+    @test_with_pir_api
     def test_api_static(self):
         data = self.fake_data["col_nan_odd"]
         paddle.enable_static()
@@ -174,7 +177,7 @@ class TestNanmedian(unittest.TestCase):
 
     def test_dygraph(self):
         paddle.disable_static(place=self.place)
-        with paddle.fluid.dygraph.guard():
+        with paddle.base.dygraph.guard():
             data = self.fake_data["col_nan_odd"]
             out = paddle.nanmedian(paddle.to_tensor(data), keepdim=True)
         np_res = np.nanmedian(data, keepdims=True)
@@ -241,6 +244,51 @@ class TestNanmedian(unittest.TestCase):
         y.backward()
         self.assertEqual(x.grad.shape, [])
         np.testing.assert_allclose(x.grad, np.array(0.0))
+
+
+class TestNanmedianFP16Op(OpTest):
+    def setUp(self):
+        self.op_type = "nanmedian"
+        self.python_api = paddle.nanmedian
+        self.public_python_api = paddle.nanmedian
+        self.dtype = np.float16
+        self.python_out_sig = ["Out"]
+        X = np.random.random((100, 100)).astype('float16')
+        Out = np.nanmedian(X)
+        self.inputs = {'X': X}
+        self.outputs = {'Out': Out}
+
+    def test_check_output(self):
+        self.check_output(check_pir=True)
+
+    def test_check_grad(self):
+        self.check_grad(['X'], 'Out', check_pir=True)
+
+
+@unittest.skipIf(
+    not core.is_compiled_with_cuda()
+    or not core.is_bfloat16_supported(core.CUDAPlace(0)),
+    "core is not complied with CUDA and not support the bfloat16",
+)
+class TestNanmedianBF16Op(OpTest):
+    def setUp(self):
+        self.op_type = "nanmedian"
+        self.python_api = paddle.nanmedian
+        self.public_python_api = paddle.nanmedian
+        self.dtype = np.uint16
+        self.python_out_sig = ["Out"]
+        X = np.random.random((100, 100)).astype('float32')
+        Out = np.nanmedian(X)
+        self.inputs = {'X': convert_float_to_uint16(X)}
+        self.outputs = {'Out': convert_float_to_uint16(Out)}
+
+    def test_check_output(self):
+        place = core.CUDAPlace(0)
+        self.check_output_with_place(place, check_pir=True)
+
+    def test_check_grad(self):
+        place = core.CUDAPlace(0)
+        self.check_grad_with_place(place, ['X'], 'Out', check_pir=True)
 
 
 if __name__ == "__main__":

@@ -26,7 +26,7 @@ from paddle.nn import Layer, Sequential
 
 
 def set_random_seed(seed, dp_id, rank_id):
-    """Set random seed for reproducability."""
+    """Set random seed for reproducibility."""
     random.seed(seed)
     np.random.seed(seed + dp_id)
     paddle.seed(seed + dp_id)
@@ -120,7 +120,7 @@ class SimpleNetPipe(Layer):
         return feat
 
 
-class TestDistEmbeddingTraning(unittest.TestCase):
+class TestDistEmbeddingTraining(unittest.TestCase):
     def setUp(self):
         strategy = fleet.DistributedStrategy()
         self.model_parallel_size = 1

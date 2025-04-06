@@ -20,7 +20,7 @@
 #include "paddle/cinn/hlir/framework/pass.h"
 #include "paddle/cinn/hlir/pass/use_pass.h"
 
-DECLARE_string(cinn_fusion_groups_graphviz_dir);
+PD_DECLARE_string(cinn_fusion_groups_graphviz_dir);
 
 namespace cinn {
 namespace hlir {
@@ -35,7 +35,7 @@ TEST(Graph, visualize) {
   auto reduce_sum_1 = builder.ReduceSum(relu_1, {1});
   auto program = builder.Build();
 
-  auto target = common::DefaultHostTarget();
+  auto target = cinn::common::DefaultHostTarget();
   auto graph = std::make_shared<Graph>(program, target);
   ApplyPass(graph.get(), "OpFusion");
 
@@ -56,7 +56,7 @@ TEST(Graph, visualize_recompute) {
   auto add_3 = builder.Add(y, broadcast_to_2);
   auto program = builder.Build();
 
-  auto target = common::DefaultHostTarget();
+  auto target = cinn::common::DefaultHostTarget();
   auto graph = std::make_shared<Graph>(program, target);
   ApplyPass(graph.get(), "OpFusionPass");
   ApplyPass(graph.get(), "FusionMergePass");

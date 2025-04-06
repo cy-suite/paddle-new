@@ -14,8 +14,6 @@
 
 #include "paddle/cinn/hlir/op/contrib/repeat.h"
 
-#include <gflags/gflags.h>
-
 #include <memory>
 #include <string>
 #include <utility>
@@ -38,13 +36,11 @@
 #include "paddle/cinn/lang/builtin.h"
 #include "paddle/cinn/lang/compute.h"
 
-DECLARE_bool(cinn_ir_schedule);
-
 namespace cinn {
 namespace hlir {
 namespace op {
 
-using common::CINNValuePack;
+using cinn::common::CINNValuePack;
 
 std::vector<ir::Tensor> Repeat(const ir::Tensor &tensor,
                                int repeats,
@@ -83,7 +79,7 @@ std::vector<ir::Tensor> Repeat(const ir::Tensor &tensor,
         }
         return tensor(idx);
       },
-      common::UniqName(output_name));
+      cinn::common::UniqName(output_name));
   return {res};
 }
 
@@ -163,67 +159,54 @@ std::shared_ptr<framework::OpStrategy> StrategyForRepeat(
     auto tensor_A = A.as_tensor_ref();
     VLOG(3) << "A shape: " << utils::Join(tensor_A->shape, ", ")
             << ", output_shapes: " << utils::Join(output_shapes[0], ", ");
-    std::string tensor_name = common::UniqName("T_Repeat_out");
 
-    if (FLAGS_cinn_ir_schedule) {
-      CHECK_EQ(pack_args.size(), 2U);
-      tensor_name = pack_args[1].operator std::string();
-    }
+    CHECK_EQ(pack_args.size(), 2U);
+    std::string tensor_name = pack_args[1].operator std::string();
 
     std::vector<ir::Tensor> out = Repeat(tensor_A, repeats, axis, tensor_name);
     CHECK(out.size() == 1U) << "The size of Repeat's output should be 1";
 
-    std::vector<common::CINNValue> res;
+    std::vector<cinn::common::CINNValue> res;
     auto stages = CreateStages({tensor_A});
     for (auto &t : out) {
       stages->InsertLazily(t);
-      res.push_back(common::CINNValue(t));
+      res.push_back(cinn::common::CINNValue(t));
     }
 
-    res.push_back(common::CINNValue(stages));
-    *ret = common::CINNValuePack{res};
+    res.push_back(cinn::common::CINNValue(stages));
+    *ret = cinn::common::CINNValuePack{res};
   });
 
   framework::CINNSchedule repeat_schedule([=](lang::Args args,
                                               lang::RetValue *ret) {
-    if (FLAGS_cinn_ir_schedule) {
-      CHECK(!args.empty())
-          << "The input argument of repeat schedule is empty! Please check.\n";
-      common::CINNValuePack arg_pack = args[0];
-      std::vector<Expr> vec_ast;
-      for (int i = 0; i < arg_pack.size(); i++) {
-        if (arg_pack[i].is_expr()) {
-          Expr temp = arg_pack[i];
-          vec_ast.emplace_back(temp);
-        }
+    CHECK(!args.empty())
+        << "The input argument of repeat schedule is empty! Please check.\n";
+    cinn::common::CINNValuePack arg_pack = args[0];
+    std::vector<Expr> vec_ast;
+    for (int i = 0; i < arg_pack.size(); i++) {
+      if (arg_pack[i].is_expr()) {
+        Expr temp = arg_pack[i];
+        vec_ast.emplace_back(temp);
       }
-      CHECK(!vec_ast.empty());
-      ir::ModuleExpr mod_expr(vec_ast);
-      ir::IRSchedule ir_sch(mod_expr);
-      ir_sch.MergeExprs();
-      int64_t prod_size = std::accumulate(output_shapes[0].begin(),
-                                          output_shapes[0].end(),
-                                          1,
-                                          std::multiplies<int>());
-      if (prod_size > 1) {
-        if (target.arch == Target::Arch::NVGPU) {
-          pe::IRCudaScheduleInjective(ir_sch, output_shapes.front(), target);
-        } else if (target.arch == Target::Arch::X86) {
-          pe::IRScheduleInjectiveCPU(
-              ir_sch, output_shapes.front(), target, true);
-        }
-      }
-      std::vector<common::CINNValue> res{
-          common::CINNValue(ir_sch.GetModule().GetExprs().at(0))};
-      *ret = common::CINNValuePack{res};
-    } else {
-      CHECK(!args.empty())
-          << "The input argument of repeat schedule is empty! Please check.\n";
-      CINNValuePack arg_pack = args[0];
-      Expr out = arg_pack[0];
-      CHECK(out.as_tensor());
-      *ret = arg_pack;
     }
+    CHECK(!vec_ast.empty());
+    ir::ModuleExpr mod_expr(vec_ast);
+    ir::IRSchedule ir_sch(mod_expr);
+    ir_sch.MergeExprs();
+    int64_t prod_size = std::accumulate(output_shapes[0].begin(),
+                                        output_shapes[0].end(),
+                                        1,
+                                        std::multiplies<int>());
+    if (prod_size > 1) {
+      if (target.arch == Target::Arch::NVGPU) {
+        pe::IRCudaScheduleInjective(ir_sch, output_shapes.front(), target);
+      } else if (target.arch == Target::Arch::X86) {
+        pe::IRScheduleInjectiveCPU(ir_sch, output_shapes.front(), target, true);
+      }
+    }
+    std::vector<cinn::common::CINNValue> res{
+        cinn::common::CINNValue(ir_sch.GetModule().GetExprs().at(0))};
+    *ret = cinn::common::CINNValuePack{res};
   });
 
   auto strategy = std::make_shared<framework::OpStrategy>();

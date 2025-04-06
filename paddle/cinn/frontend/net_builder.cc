@@ -28,8 +28,8 @@
 namespace cinn {
 namespace frontend {
 
-using common::Context;
-using common::Type;
+using cinn::common::Context;
+using cinn::common::Type;
 using hlir::framework::Operator;
 using utils::AttributeMap;
 using utils::ShapeType;
@@ -253,12 +253,8 @@ NETBUILDER_REDUCE_OP_DEF(ReduceAny, reduce_any)
 Placeholder NetBuilder::CreateInput(const Type& type,
                                     const std::vector<int>& shape,
                                     const std::string& id_hint) {
-  if (!id_hint.empty()) {
-    cinn::utils::TransValidVarName(id_hint);
-  }
-  std::string id =
-      id_hint.empty() ? Context::Global().NewName("placeholder") : id_hint;
-
+  std::string id = id_hint.empty() ? Context::Global().NewName("placeholder")
+                                   : cinn::utils::TransValidVarName(id_hint);
   inputs_.emplace_back(id);
   auto& var = inputs_.back();
   var->type = type;
@@ -279,7 +275,7 @@ Variable NetBuilder::FillConstant(const std::vector<int>& shape,
                                   const std::string& name,
                                   const std::string& dtype,
                                   bool force_cpu) {
-  const auto& type = common::Str2Type(dtype);
+  const auto& type = cinn::common::Str2Type(dtype);
 
   utils::Attribute value;
   if (type.is_float()) {
@@ -537,7 +533,7 @@ Variable NetBuilder::Cast(const Variable& operand, const std::string& dtype) {
 
 Variable NetBuilder::BitcastConvert(const Variable& operand,
                                     const std::string& dtype) {
-  std::string input_data_type = common::Type2Str(operand->type);
+  std::string input_data_type = cinn::common::Type2Str(operand->type);
   return CustomInstr("bitcast_convert",
                      {operand},
                      {{"dtype", dtype}, {"input_data_type", input_data_type}})
@@ -1129,7 +1125,8 @@ Variable NetBuilder::Cholesky(const Variable& x, bool upper) {
                     : LessEqual(index_row, index_col);
   auto mask_mat = Reshape(mask, {m, m});
   auto mask_full = BroadcastTo(mask_mat, x->shape);
-  auto zeros = FillConstant(x->shape, 0.0f, "zeros", common::Type2Str(x->type));
+  auto zeros =
+      FillConstant(x->shape, 0.0f, "zeros", cinn::common::Type2Str(x->type));
   auto out = Select(mask_full, cholesky_out, zeros);
   return out;
 }

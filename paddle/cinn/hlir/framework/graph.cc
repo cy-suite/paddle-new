@@ -18,16 +18,19 @@
 #include <sstream>
 
 #include "paddle/cinn/hlir/framework/visualize_helper.h"
+#ifdef CINN_WITH_CUDA
+#include "paddle/cinn/runtime/cuda/cuda_util.h"
+#endif
 #include "paddle/cinn/runtime/flags.h"
 #include "paddle/cinn/utils/string.h"
 
-DECLARE_string(cinn_fusion_groups_graphviz_dir);
+PD_DECLARE_string(cinn_fusion_groups_graphviz_dir);
 
 namespace cinn {
 namespace hlir {
 namespace framework {
 
-using DTypeDict = absl::flat_hash_map<std::string, common::Type>;
+using DTypeDict = absl::flat_hash_map<std::string, cinn::common::Type>;
 using ShapeDict = absl::flat_hash_map<std::string, shape_t>;
 
 void Graph::Initialize(const frontend::Program& prog,
@@ -47,7 +50,7 @@ void Graph::Initialize(const frontend::Program& prog,
     Shared<Node> node_ptr(node_tmp);
     node_tmp->attrs.attr_store = temp->attrs;
     for (auto& input_v : temp->inputs) {
-      common::GraphNode* graph_node = this->RetrieveNode(input_v->id);
+      cinn::common::GraphNode* graph_node = this->RetrieveNode(input_v->id);
       if (!graph_node) {
         dtype_dict[input_v->id] = input_v->type;
         shape_dict[input_v->id] = input_v->shape;
@@ -61,7 +64,7 @@ void Graph::Initialize(const frontend::Program& prog,
     }
     int out_idx = 0;
     for (auto& output_v : temp->outputs) {
-      common::GraphNode* graph_node = this->RetrieveNode(output_v->id);
+      cinn::common::GraphNode* graph_node = this->RetrieveNode(output_v->id);
       if (!graph_node) {
         dtype_dict[output_v->id] = output_v->type;
         shape_dict[output_v->id] = output_v->shape;
@@ -88,10 +91,11 @@ std::vector<std::vector<Node*>> Graph::FusionGroupsToGroups() {
   std::vector<std::vector<Node*>> groups;
   if (fusion_groups.empty()) {
     // if no fusion_groups, the graph will be treated as a big group
-    const auto& nodes = this->CollectNodes([](const common::GraphNode* node) {
-      return node->safe_as<Node>() != nullptr &&
-             node->safe_as<Node>()->op() != nullptr;
-    });
+    const auto& nodes =
+        this->CollectNodes([](const cinn::common::GraphNode* node) {
+          return node->safe_as<Node>() != nullptr &&
+                 node->safe_as<Node>()->op() != nullptr;
+        });
     std::vector<Node*> group;
     group.reserve(nodes.size());
     for (auto* node : nodes) {
@@ -196,8 +200,9 @@ std::string Graph::DebugGroupedGraph(
     const auto& shape = shape_dict.count(id)
                             ? cinn::utils::Join(shape_dict.at(id), ", ")
                             : "-1";
-    const auto& dtype =
-        dtype_dict.count(id) ? common::Type2Str(dtype_dict.at(id)) : "float32";
+    const auto& dtype = dtype_dict.count(id)
+                            ? cinn::common::Type2Str(dtype_dict.at(id))
+                            : "float32";
 
     // generator python create_input code
     debug_str << "    " << id << " = builder.create_input(type=\"" << dtype
@@ -308,66 +313,45 @@ void Graph::VisualizeGroupedGraph(
     return;
   }
 
-  int viz_id = viz_count_.fetch_add(1);
-  {
-    // create base Directory
-    viz_path_ =
-        utils::StringFormat("%s/fusion_groups_%d/",
-                            FLAGS_cinn_fusion_groups_graphviz_dir.c_str(),
-                            viz_id);
-    if (!MakeDirectory(viz_path_,
-                       S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
-      LOG_IF(WARNING, viz_id == 0)
-          << "Failed to make directory: \"" << viz_path_
-          << "\", the CINN subgraph's fusion group information will not print.";
-      viz_path_.clear();
-      return;
-    }
-    LOG_IF(INFO, viz_id == 0) << "The CINN subgraph's fusion group information "
-                                 "will writing into path: \""
-                              << FLAGS_cinn_fusion_groups_graphviz_dir << "\"";
-  }
-
+  // Dump debug info for each group
+  VLOG(4) << "Dump graph debug info to: "
+          << FLAGS_cinn_fusion_groups_graphviz_dir;
   const auto& groups = RemoveAccCheckGroups(origin_groups);
-  {
-    // save python test file
-    std::string py_test_path = viz_path_ + "/tests/";
-    if (!MakeDirectory(py_test_path,
-                       S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
-      LOG_IF(WARNING, viz_id == 0)
-          << "Failed to make directory: \"" << py_test_path
-          << "\", the CINN subgraph's python test file will not generate.";
-      py_test_path.clear();
-    }
-    if (!py_test_path.empty()) {
-      for (int i = 0; i < groups.size(); i++) {
-        WriteToFile(py_test_path + "test_group_" + std::to_string(i) + ".py",
-                    GenerateGroupPythonCode(groups[i], fetch_var_ids));
-      }
-    }
-  }
-
-  Summary(groups, viz_path_);
-  WriteToFile(viz_path_ + "grouped_graph.dot",
-              VisualizeGraph(groups, fetch_var_ids));
-
-  {
-    // save each group's graphviz dot file
-    std::string group_path = viz_path_ + "/groups/";
+  const auto& group_dots = VisualizeGroups(groups, fetch_var_ids);
+  for (int idx = 0; idx < groups.size(); ++idx) {
+    // Create fusion_group_x folder
+    int device_id = 0;
+#ifdef CINN_WITH_CUDA
+    cudaGetDevice(&device_id);
+#endif
+    auto group_path =
+        utils::StringFormat("%s/device_%d/fusion_group_%d",
+                            FLAGS_cinn_fusion_groups_graphviz_dir.c_str(),
+                            device_id,
+                            idx);
     if (!MakeDirectory(group_path,
                        S_IRWXU | S_IRGRP | S_IXGRP | S_IROTH | S_IXOTH)) {
-      LOG_IF(WARNING, viz_id == 0)
-          << "Failed to make directory: \"" << group_path
-          << "\", the CINN subgraph's group graphviz file will not save.";
-      group_path.clear();
+      LOG(WARNING) << "Failed to make directory: \"" << group_path
+                   << "\", skip dump info for this group.";
+      continue;
     }
-    if (!group_path.empty()) {
-      const auto& group_dots = VisualizeGroups(groups, fetch_var_ids);
-      for (int i = 0; i < group_dots.size(); ++i) {
-        WriteToFile(GetFilePathForGroup(groups, i, group_path), group_dots[i]);
-      }
-    }
+    // Create test_group_x.py
+    auto python_test_file =
+        utils::StringFormat("%s/test_group_%d.py", group_path.c_str(), idx);
+    WriteToFile(python_test_file,
+                GenerateGroupPythonCode(groups[idx], fetch_var_ids));
+    // Create x_group_name.dot
+    auto graph_group_file =
+        utils::StringFormat("%s/graph_group_%d.dot", group_path.c_str(), idx);
+    WriteToFile(graph_group_file, group_dots[idx]);
   }
+
+  // Summary
+  Summary(groups, FLAGS_cinn_fusion_groups_graphviz_dir);
+  // Grouped graph
+  auto grouped_graph_file = utils::StringFormat(
+      "%s/grouped_graph.dot", FLAGS_cinn_fusion_groups_graphviz_dir.c_str());
+  WriteToFile(grouped_graph_file, VisualizeGraph(groups, fetch_var_ids));
 }
 
 std::string Graph::VisualizeGraph(
@@ -494,9 +478,7 @@ std::vector<std::string> Graph::VisualizeGroups(
   return dot_vec;
 }
 
-std::atomic_size_t Graph::viz_count_{0};
-
-std::unordered_set<NodeData*> Graph::Group::GetInputNodeDatas() {
+std::unordered_set<NodeData*> Graph::Group::GetInputNodeDatas() const {
   std::unordered_set<NodeData*> group_inputs;
 
   // count all node's input data
@@ -526,7 +508,7 @@ std::unordered_set<NodeData*> Graph::Group::GetInputNodeDatas() {
   return group_inputs;
 }
 
-std::unordered_set<NodeData*> Graph::Group::GetOutputNodeDatas() {
+std::unordered_set<NodeData*> Graph::Group::GetOutputNodeDatas() const {
   std::unordered_set<NodeData*> group_outputs;
 
   for (auto node : this->output_nodes) {
@@ -541,25 +523,6 @@ std::unordered_set<NodeData*> Graph::Group::GetOutputNodeDatas() {
   }
 
   return group_outputs;
-}
-
-void Graph::SaveSourceCode(const std::string& code) {
-  if (cinn::runtime::CheckStringFlagFalse(
-          FLAGS_cinn_fusion_groups_graphviz_dir) ||
-      viz_path_.empty()) {
-    return;
-  }
-  WriteToFile(viz_path_ + "source_code.cu", code);
-}
-
-void Graph::SavePTXCode(const std::string& ptx) {
-  if (cinn::runtime::CheckStringFlagFalse(
-          FLAGS_cinn_fusion_groups_graphviz_dir) ||
-      viz_path_.empty()) {
-    return;
-  }
-
-  WriteToFile(viz_path_ + "source_code.ptx", ptx);
 }
 
 }  // namespace framework

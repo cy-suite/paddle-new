@@ -34,6 +34,16 @@ SPMDRuleBase::InferForward(const std::vector<DistTensorSpec>& input_specs,
 }
 
 std::pair<std::vector<TensorDistAttr>, std::vector<TensorDistAttr>>
+SPMDRuleBase::InferBackward(const std::vector<DistTensorSpec>& input_specs,
+                            const std::vector<DistTensorSpec>& output_specs,
+                            const paddle::framework::AttributeMap& attrs) {
+  PADDLE_THROW(
+      phi::errors::Unimplemented("InferBackward should be called from a "
+                                 "derived class of SPMDRuleBase !"));
+}
+
+// deprecated
+std::pair<std::vector<TensorDistAttr>, std::vector<TensorDistAttr>>
 SPMDRuleBase::InferBackward(const std::vector<DistTensorSpec>& output_specs,
                             const paddle::framework::AttributeMap& attrs) {
   PADDLE_THROW(
@@ -47,7 +57,7 @@ std::unordered_map<std::string, int64_t> ShardingMergeForTensors(
     const bool merge_conflicts) {
   std::unordered_map<std::string, int64_t> axis_to_dim_map;
   std::unordered_map<int64_t, std::string> dim_to_axis_map;
-  int64_t merge_dim;
+  int64_t merge_dim = 0;
 
   for (auto& pair : tensor_axes_to_dim_pairs) {
     for (size_t i = 0; i < pair.second.size(); ++i) {
@@ -72,7 +82,7 @@ std::unordered_map<std::string, int64_t> ShardingMergeForTensors(
     }
   }
 
-  // Resolute "mesh_dim shard by more than one axis" confict.
+  // Resolute "mesh_dim shard by more than one axis" conflict.
   // Now we just naive pick the first axis naively.
   // (TODO) use local cost model to pick the axis with lowest cost(in concern of
   // memory or communication or computation).
@@ -97,7 +107,7 @@ std::unordered_map<std::string, int64_t> ShardingMergeForTensors(
   return axis_to_dim_map;
 }
 
-// Rule1: A repicated dimension could be merged by any sharded dimension.
+// Rule1: A replicated dimension could be merged by any sharded dimension.
 // Rule2: A tensor axis could at most be sharded by one mesh dimension.
 // (TODO trigger heuristics cost model and reshard to handle axis sharded by
 // multiple dimension case.)
@@ -149,7 +159,7 @@ std::vector<int64_t> ResoluteOutputPartialDimension(
   return partial_on_dims;
 }
 
-std::string GetBroadcastAxes(const int64_t& tenosr_ndim,
+std::string GetBroadcastAxes(const int64_t& tensor_ndim,
                              const int64_t& broadcast_ndim,
                              const std::string& alphabet) {
   PADDLE_ENFORCE_GE(
@@ -160,15 +170,15 @@ std::string GetBroadcastAxes(const int64_t& tenosr_ndim,
           alphabet.size(),
           broadcast_ndim));
   PADDLE_ENFORCE_GE(broadcast_ndim,
-                    tenosr_ndim,
+                    tensor_ndim,
                     phi::errors::InvalidArgument(
-                        "broadcast ndim [%d] is less than tenosr ndim [%d]",
+                        "broadcast ndim [%d] is less than tensor ndim [%d]",
                         broadcast_ndim,
-                        tenosr_ndim));
-  if (tenosr_ndim <= 0) {
+                        tensor_ndim));
+  if (tensor_ndim <= 0) {
     return std::string();
   }
-  return alphabet.substr(broadcast_ndim - tenosr_ndim, tenosr_ndim);
+  return alphabet.substr(broadcast_ndim - tensor_ndim, tensor_ndim);
 }
 
 TensorDistAttr ReplicatedOnMesh(const TensorDistAttr& src_dist_attr) {
@@ -203,27 +213,32 @@ GetAxesDimsMappingPair(const std::vector<std::string>& tensor_axes,
   std::vector<std::pair<std::string, std::vector<int64_t>>> res;
   size_t ntensor = specs.size();
   for (size_t i = 0; i < ntensor; ++i) {
-    res.emplace_back(std::pair<std::string, std::vector<int64_t>>(
-        tensor_axes[i], specs[i].dims_mapping()));
+    res.emplace_back(tensor_axes[i], specs[i].dims_mapping());
   }
   return res;
 }
 
 std::vector<int64_t> GetDimsMappingForAxes(
     const std::string& axes,
-    const std::unordered_map<std::string, int64_t>& axis_to_dim_map) {
+    const std::unordered_map<std::string, int64_t>& axis_to_dim_map,
+    const bool unsharded_miss_axis) {
   std::vector<int64_t> dims_mapping;
-  for (int64_t i = 0, n = axes.size(); i < n; i++) {
+  for (int64_t i = 0, n = static_cast<int64_t>(axes.size()); i < n; i++) {
     std::string axis = axes.substr(i, 1);
     if (axis == "1") {
       dims_mapping.emplace_back(-1);
     } else {
       auto iter = axis_to_dim_map.find(axis);
       if (iter == axis_to_dim_map.end()) {
-        phi::errors::InvalidArgument(
-            "Tensor axis [%s] of not in axis_to_dim_map.", axis);
+        if (unsharded_miss_axis) {
+          dims_mapping.emplace_back(-1);
+        } else {
+          phi::errors::InvalidArgument(
+              "Tensor axis [%s] of not in axis_to_dim_map.", axis);
+        }
+      } else {
+        dims_mapping.emplace_back(iter->second);
       }
-      dims_mapping.emplace_back(iter->second);
     }
   }
   return dims_mapping;

@@ -88,12 +88,12 @@ class TrtConvertReshapeTest(TrtLayerAutoScanTest):
                     },
                 ]
                 self.dims = dims
-                dics_intput = [{"X": ["reshape_input"]}]
+                dics_input = [{"X": ["reshape_input"]}]
 
                 ops_config = [
                     {
                         "op_type": "reshape",
-                        "op_inputs": dics_intput[0],
+                        "op_inputs": dics_input[0],
                         "op_outputs": {"Out": ["reshape_out"]},
                         "op_attrs": dics[0],
                     }
@@ -172,10 +172,12 @@ class TrtConvertReshapeTest(TrtLayerAutoScanTest):
         # for static_shape
         clear_dynamic_shape()
         self.trt_param.precision = paddle_infer.PrecisionType.Float32
+        program_config.set_input_type(np.float32)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, False
         ), 1e-5
         self.trt_param.precision = paddle_infer.PrecisionType.Half
+        program_config.set_input_type(np.float16)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, False
         ), 1e-3
@@ -183,10 +185,12 @@ class TrtConvertReshapeTest(TrtLayerAutoScanTest):
         # for dynamic_shape
         generate_dynamic_shape(attrs)
         self.trt_param.precision = paddle_infer.PrecisionType.Float32
+        program_config.set_input_type(np.float32)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, True
         ), 1e-5
         self.trt_param.precision = paddle_infer.PrecisionType.Half
+        program_config.set_input_type(np.float16)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, True
         ), 1e-3
@@ -224,7 +228,7 @@ class TrtConvertReshapeTest2(TrtLayerAutoScanTest):
                     {},
                 ]
                 self.dims = dims
-                dics_intput = [
+                dics_input = [
                     {
                         "X": ["reshape_input"],
                         "ShapeTensor": ["shapeT1_data", "shapeT2_data"],
@@ -253,7 +257,7 @@ class TrtConvertReshapeTest2(TrtLayerAutoScanTest):
                     },
                     {
                         "op_type": "reshape",
-                        "op_inputs": dics_intput[0],
+                        "op_inputs": dics_input[0],
                         "op_outputs": {"Out": ["reshape_out"]},
                         "op_attrs": dics[0],
                     },
@@ -308,8 +312,10 @@ class TrtConvertReshapeTest2(TrtLayerAutoScanTest):
         # for dynamic_shape
         generate_dynamic_shape()
         self.trt_param.precision = paddle_infer.PrecisionType.Float32
+        program_config.set_input_type(np.float32)
         yield self.create_inference_config(), (1, 2), 1e-5
         self.trt_param.precision = paddle_infer.PrecisionType.Half
+        program_config.set_input_type(np.float16)
         yield self.create_inference_config(), (1, 2), 1e-3
 
     def add_skip_trt_case(self):
@@ -345,7 +351,7 @@ class TrtConvertReshapeTest3(TrtLayerAutoScanTest):
                     {},
                 ]
                 self.dims = dims
-                dics_intput = [
+                dics_input = [
                     {
                         "X": ["reshape_input"],
                         "shape_data": ["shape_data"],
@@ -364,7 +370,7 @@ class TrtConvertReshapeTest3(TrtLayerAutoScanTest):
                     },
                     {
                         "op_type": "reshape",
-                        "op_inputs": dics_intput[0],
+                        "op_inputs": dics_input[0],
                         "op_outputs": {"Out": ["reshape_out"]},
                         "op_attrs": dics[0],
                     },
@@ -419,8 +425,10 @@ class TrtConvertReshapeTest3(TrtLayerAutoScanTest):
         # for dynamic_shape
         generate_dynamic_shape()
         self.trt_param.precision = paddle_infer.PrecisionType.Float32
+        program_config.set_input_type(np.float32)
         yield self.create_inference_config(), (1, 2), 1e-5
         self.trt_param.precision = paddle_infer.PrecisionType.Half
+        program_config.set_input_type(np.float16)
         yield self.create_inference_config(), (1, 2), 1e-3
 
     def add_skip_trt_case(self):
@@ -455,12 +463,12 @@ class TrtConvertReshapeZeroDimsTest(TrtLayerAutoScanTest):
                     },
                 ]
                 self.dims = dims
-                dics_intput = [{"X": ["reshape_input"]}]
+                dics_input = [{"X": ["reshape_input"]}]
 
                 ops_config = [
                     {
                         "op_type": "reshape",
-                        "op_inputs": dics_intput[0],
+                        "op_inputs": dics_input[0],
                         "op_outputs": {"Out": ["reshape_out"]},
                         "op_attrs": dics[0],
                     }
@@ -509,10 +517,12 @@ class TrtConvertReshapeZeroDimsTest(TrtLayerAutoScanTest):
         # for dynamic_shape
         generate_dynamic_shape(attrs)
         self.trt_param.precision = paddle_infer.PrecisionType.Float32
+        program_config.set_input_type(np.float32)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, True
         ), 1e-5
         self.trt_param.precision = paddle_infer.PrecisionType.Half
+        program_config.set_input_type(np.float16)
         yield self.create_inference_config(), generate_trt_nodes_num(
             attrs, True
         ), 1e-3

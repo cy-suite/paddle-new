@@ -14,7 +14,6 @@ set(infermeta_srcs CACHE INTERNAL "" FORCE)
 
 # paddle experimental common components
 add_subdirectory(common)
-
 # phi (low level) api headers: include
 # phi (high level) api
 add_subdirectory(api)
@@ -36,14 +35,15 @@ endif()
 set(PHI_DEPS
     phi_profiler_proto
     auto_parallel_proto
-    gflags
+    ${flags_dep}
     glog
     warpctc
     warprnnt
     eigen3
     xxhash
     cblas
-    utf8proc)
+    utf8proc
+    common)
 
 set(INFERENCE_DEPS phi_profiler_proto auto_parallel_proto)
 
@@ -92,6 +92,10 @@ if(WITH_XPU)
   endif()
 endif()
 
+if(WITH_DGC)
+  list(APPEND PHI_DEPS dgc)
+endif()
+
 set(PHI_SRCS
     ${common_srcs}
     ${api_srcs}
@@ -109,6 +113,15 @@ else()
   set(PHI_BUILD_TYPE
       STATIC
       CACHE INTERNAL "" FORCE)
+endif()
+
+if(WITH_AVX
+   AND AVX512F_FOUND
+   AND AVX512F_FLAG
+   AND WITH_MKL)
+  set_source_files_properties(
+    kernels/fusion/cpu/self_dp_attention_kernel.cc
+    PROPERTIES COMPILE_FLAGS "-Wno-maybe-uninitialized  -mfma ${AVX512F_FLAG}")
 endif()
 
 if(WITH_GPU)

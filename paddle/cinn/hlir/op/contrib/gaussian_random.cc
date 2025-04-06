@@ -12,8 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include <gflags/gflags.h>
-
 #include <memory>
 #include <string>
 #include <utility>
@@ -49,8 +47,8 @@ namespace cinn {
 namespace hlir {
 namespace op {
 
-using common::CINNValue;
-using common::CINNValuePack;
+using cinn::common::CINNValue;
+using cinn::common::CINNValuePack;
 
 std::shared_ptr<framework::OpStrategy> StrategyForGaussianRandom(
     const framework::NodeAttr &attrs,
@@ -90,7 +88,7 @@ std::vector<Type> InferDtypeForGaussianRandom(
   if (attrs.find("dtype") != attrs.end()) {
     dtype = absl::get<std::string>(attrs.at("dtype"));
   }
-  std::vector<Type> res{common::Str2Type(dtype)};
+  std::vector<Type> res{cinn::common::Str2Type(dtype)};
   CHECK(res[0].is_float(32) || res[0].is_float(64))
       << "gaussian_random only support float32 and float64, but here " << res[0]
       << "! Please check.";

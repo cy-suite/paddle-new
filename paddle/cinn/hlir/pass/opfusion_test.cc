@@ -25,7 +25,7 @@
 #include "paddle/cinn/hlir/pass/use_pass.h"
 #include "paddle/cinn/utils/data_util.h"
 
-DEFINE_string(model_dir, "", "");
+PD_DEFINE_string(model_dir, "", "");
 
 namespace cinn {
 namespace frontend {
@@ -69,7 +69,7 @@ TEST(complex2, complex2) {
   auto e = program.relu(c);
   auto f = program.elementwise_add(d, e);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B, C, D, E});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -80,7 +80,8 @@ TEST(complex2, complex2) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -124,7 +125,7 @@ TEST(complex1, complex1) {
   auto e = program.relu(c);
   auto f = program.elementwise_add(d, e);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B, C, D, E});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -135,7 +136,8 @@ TEST(complex1, complex1) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -161,7 +163,7 @@ TEST(fuse_add_relu, fuse_add_relu) {
   auto c = program.elementwise_add(A, B, 1);
   auto d = program.relu(c);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -172,7 +174,8 @@ TEST(fuse_add_relu, fuse_add_relu) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -199,7 +202,7 @@ TEST(fuse_add, fuse_add) {
   auto c = program.elementwise_add(A, B, 1);
   auto d = program.elementwise_add(c, C, 1);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B, C});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -210,7 +213,8 @@ TEST(fuse_add, fuse_add) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -257,7 +261,7 @@ TEST(conv_bn_conv, conv_bn_conv) {
   auto f = program.elementwise_mul(e, D);
   auto g = program.relu(f);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B, C, D, E});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -268,7 +272,8 @@ TEST(conv_bn_conv, conv_bn_conv) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -308,7 +313,7 @@ TEST(fuse_conv_add, fuse_conv_add) {
   auto c = program.conv2d(A, B, attrs);
   auto d = program.elementwise_add(c, C, 1);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B, C});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -319,7 +324,8 @@ TEST(fuse_conv_add, fuse_conv_add) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -366,7 +372,7 @@ TEST(conv_add_mul, conv_add_mul) {
   auto d = program.elementwise_add(c, Scale);
   auto e = program.elementwise_mul(d, Bias, 1);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B, D});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -377,7 +383,8 @@ TEST(conv_add_mul, conv_add_mul) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -414,7 +421,7 @@ TEST(fuse_conv_add1, fuse_conv_add1) {
   auto c = program.conv2d(A, B, attrs);
   auto d = program.elementwise_add(c, C);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B, C});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -426,7 +433,8 @@ TEST(fuse_conv_add1, fuse_conv_add1) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -454,7 +462,7 @@ TEST(transpose_reshape_concat, transpose_reshape_concat) {
   auto d = program.reshape(b, {4, 32});
   auto e = program.concat({c, d});
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -465,7 +473,8 @@ TEST(transpose_reshape_concat, transpose_reshape_concat) {
   auto scope = BuildScope(target, graph);
   LOG(INFO) << "graph:\n" << graph->Visualize();
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");
@@ -506,7 +515,7 @@ TEST(conv_bn, conv_bn) {
   auto d =
       program.fused_batchnorm_inference(c, Scale, Bias, Mean, Variance, attrs1);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B, Scale, Bias, Mean, Variance});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -517,7 +526,8 @@ TEST(conv_bn, conv_bn) {
   hlir::framework::ApplyPass(graph.get(), "OpFusion");
   auto scope = BuildScope(target, graph);
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");

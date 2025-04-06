@@ -34,7 +34,7 @@ class ReshapePrimOp : public framework::OperatorBase {
   void RunImpl(const framework::Scope &scope,
                const platform::Place &dev_place) const override {
     PADDLE_THROW(platform::errors::Unimplemented(
-        "Prim operator reshape_p should not be excuted directly"));
+        "Prim operator reshape_p should not be executed directly"));
   }
 };
 
@@ -53,8 +53,8 @@ Autograd primitive reshape_p operator.
 
 static int64_t product(const std::vector<int64_t> &shape) {
   int64_t rslt = 1;
-  for (size_t i = 0; i < shape.size(); ++i) {
-    rslt *= shape[i];
+  for (auto item : shape) {
+    rslt *= item;
   }
   return rslt;
 }

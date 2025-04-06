@@ -38,7 +38,7 @@ namespace operators {
 
 class CCommInitMultiTrainerInferShape : public framework::InferShapeBase {
  public:
-  ~CCommInitMultiTrainerInferShape() override {}
+  ~CCommInitMultiTrainerInferShape() override = default;
   void operator()(framework::InferShapeContext* ctx) const override{};
 };
 
@@ -83,7 +83,7 @@ class CCommInitMultiTrainerOpMaker : public framework::OpProtoAndCheckerMaker {
     AddComment(R"DOC(
 CCommInitMultiTrainer operator
 
-Initialize collective communicatoin context within this trainer
+Initialize collective communication context within this trainer
 )DOC");
     AddAttr<int>("ntrainers",
                  "(int) The number of trainers of distributed trainers");

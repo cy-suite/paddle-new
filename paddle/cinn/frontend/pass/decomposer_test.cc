@@ -60,9 +60,9 @@ TEST(DecomposePass, basic) {
   }
 
 #ifdef CINN_WITH_CUDA
-  Target target = common::DefaultNVGPUTarget();
+  Target target = cinn::common::DefaultNVGPUTarget();
 #else
-  Target target = common::DefaultHostTarget();
+  Target target = cinn::common::DefaultHostTarget();
 #endif
 
   ProgramPass::Apply(&prog, {}, target, {"Decomposer"});
@@ -73,7 +73,8 @@ TEST(DecomposePass, basic) {
   auto graph = std::make_shared<hlir::framework::Graph>(prog, target);
   hlir::framework::ApplyPasses(graph.get(), DefaultOpFusionPasses());
   auto scope = BuildScope(target, graph);
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
 
   scope->Var<hlir::framework::Tensor>("A");

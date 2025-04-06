@@ -40,8 +40,8 @@ void MaskedSelectGradKernel(const Context& dev_ctx,
   bool expand_x = false;
 
   auto expanded_size = funcs::MatrixGetBroadcastBatchPortion(
-      vectorize(x_grad->dims()), vectorize(mask.dims()));
-  auto expaned_dims = make_ddim(expanded_size);
+      common::vectorize(x_grad->dims()), common::vectorize(mask.dims()));
+  auto expaned_dims = common::make_ddim(expanded_size);
 
   if (mask.dims() != expaned_dims) {
     ExpandKernel<bool, Context>(
@@ -64,7 +64,7 @@ void MaskedSelectGradKernel(const Context& dev_ctx,
 
   auto* mask_data = mask_expand.data<bool>();
   auto* input_data = out_grad.data<T>();
-  int mask_size = mask_expand.numel();
+  int mask_size = static_cast<int>(mask_expand.numel());
 
   int index = 0;
   for (int i = 0; i < mask_size; i++) {
@@ -100,7 +100,15 @@ PD_REGISTER_KERNEL(masked_select_grad,
                    CPU,
                    ALL_LAYOUT,
                    phi::MaskedSelectGradKernel,
+                   bool,
                    float,
                    double,
                    int,
-                   int64_t) {}
+                   int8_t,
+                   int64_t,
+                   int16_t,
+                   uint8_t,
+                   phi::dtype::float16,
+                   phi::dtype::bfloat16,
+                   phi::dtype::complex<float>,
+                   phi::dtype::complex<double>) {}

@@ -25,7 +25,7 @@
 #include "paddle/cinn/hlir/pass/use_pass.h"
 #include "paddle/cinn/utils/data_util.h"
 
-DEFINE_string(model_dir, "", "");
+PD_DEFINE_string(model_dir, "", "");
 
 namespace cinn {
 namespace frontend {
@@ -46,7 +46,7 @@ TEST(const_conv, const_conv) {
   attrs["data_format"] = src_layout;
 
   auto c = program.conv2d(A, B, attrs);
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, B});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -57,7 +57,8 @@ TEST(const_conv, const_conv) {
   hlir::framework::ApplyPass(graph.get(), "OpFusionPass");
   auto scope = BuildScope(target, graph);
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
   auto& prerun_instrs = runtime_program->GetPreRunInstructions();
   auto& run_instrs = runtime_program->GetRunInstructions();
@@ -90,7 +91,7 @@ TEST(const_bn, const_bn) {
   auto a =
       program.fused_batchnorm_inference(A, Scale, Bias, Mean, Variance, attrs);
 
-  Target target = common::DefaultTarget();
+  Target target = cinn::common::DefaultTarget();
   program.SetInputs({A, Scale, Bias, Mean, Variance});
   program.Validate();
   LOG(INFO) << "Program:\n" << program;
@@ -101,7 +102,8 @@ TEST(const_bn, const_bn) {
   hlir::framework::ApplyPass(graph.get(), "FusionMergePass");
   auto scope = BuildScope(target, graph);
 
-  hlir::framework::GraphCompiler gc(target, scope, graph);
+  hlir::framework::CompilationContext context(graph, scope, target);
+  hlir::framework::GraphCompiler gc(context);
   auto runtime_program = gc.Build();
   auto& prerun_instrs = runtime_program->GetPreRunInstructions();
   auto& run_instrs = runtime_program->GetRunInstructions();

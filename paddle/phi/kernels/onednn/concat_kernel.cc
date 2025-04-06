@@ -52,11 +52,11 @@ class ConcatOneDNNHandler : public OneDNNHandlerNoCachingT<T, dnnl::concat> {
     srcs_md.reserve(inputs.size());
 
     // Create memory descriptors for each of inputs
-    for (size_t i = 0; i < inputs.size(); ++i) {
-      srcs_md.push_back(inputs[i]->mem_desc());
+    for (auto input : inputs) {
+      srcs_md.push_back(input->mem_desc());
     }
 
-    auto dst_dims = vectorize<int64_t>(output->dims());
+    auto dst_dims = common::vectorize<int64_t>(output->dims());
 
     memory::desc dst_md = memory::desc(dst_dims, dt, OneDNNMemoryFormat::any);
 
@@ -104,14 +104,14 @@ void ConcatKernel(const Context& dev_ctx,
   auto multi_input = ReduceMultiInput(x);
   EnforceLayouts(multi_input);
 
-  auto out_dims_vec = vectorize(out->dims());
+  auto out_dims_vec = common::vectorize(out->dims());
   if (std::any_of(out_dims_vec.begin(), out_dims_vec.end(), [](int64_t i) {
         return i < 0;
       })) {
     std::vector<phi::DDim> x_dims;
     x_dims.reserve(x.size());
-    for (size_t i = 0; i < x.size(); ++i) {
-      x_dims.push_back(x[i]->dims());
+    for (auto item : x) {
+      x_dims.push_back(item->dims());
     }
 
     DDim out_dims =

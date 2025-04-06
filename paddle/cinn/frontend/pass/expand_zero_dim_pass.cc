@@ -32,12 +32,15 @@ class ExpandZeroDimPass : public ProgramPass {
  protected:
   void ApplyImpl(Program* program,
                  const std::unordered_set<std::string>& fetch_ids,
-                 const common::Target& target) override {
+                 const cinn::common::Target& target) override {
     NetBuilder builder("expand_zero_dim_builder");
     for (int i = 0; i < program->size(); ++i) {
       auto& instr = (*program)[i];
       if (instr->op_type == "transpose") {
         builder.AppendInstruction(HandleTranspose(instr));
+        continue;
+      } else if (instr->op_type == "fill_constant") {
+        builder.AppendInstruction(HandleFillConstant(instr));
         continue;
       }
       for (auto& input : instr->inputs) {
@@ -99,6 +102,20 @@ class ExpandZeroDimPass : public ProgramPass {
       VLOG(4) << "Change Transpose's attribute axis from [] to [1]";
       new_instr.SetAttr<std::vector<int32_t>>("axis", axis);
     }
+    return new_instr;
+  }
+
+  // Before: out-0D = fill_constant([], 123.456, "out", "float32")
+  // After:  out-1D = fill_constant([1], 123.456, "out", "float32")
+  Instruction HandleFillConstant(const Instruction& instr) {
+    Instruction new_instr = instr;
+    std::vector<int32_t> shape =
+        new_instr.GetAttrs<std::vector<int32_t>>("shape");
+    if (shape.empty()) {
+      shape.push_back(1);
+      VLOG(4) << "Change fill_constant's attribute shape from [] to [1]";
+    }
+    new_instr.SetAttr<std::vector<int32_t>>("shape", shape);
     return new_instr;
   }
 };

@@ -23,12 +23,9 @@ try:
 except:
     from .utils import tqdm
 
-from inspect import isgeneratorfunction
-
-from paddle.fluid.framework import IrGraph, _get_var
+from paddle.base.framework import IrGraph, _get_var
 
 from ... import io, static
-from ...fluid import reader
 from ...framework import core
 from ...utils import unique_name
 from ..log_helper import get_logger
@@ -115,7 +112,7 @@ def _apply_pass(
 
 class PostTrainingQuantization:
     """
-    Utilizing post training quantization methon to quantize the FP32 model,
+    Utilizing post training quantization method to quantize the FP32 model,
     and it uses calibrate data to get the quantization information for all
     quantized variables.
     """
@@ -154,7 +151,7 @@ class PostTrainingQuantization:
         return_graph=False,
         deploy_backend=None,
     ):
-        '''
+        """
         Constructor.
 
         Args:
@@ -171,22 +168,22 @@ class PostTrainingQuantization:
                 When all parameters were saved in a single binary file, set it
                 as the real filename. If parameters were saved in separate files,
                 set it as 'None'. Default is 'None'.
-            batch_generator(Python Generator): The batch generator provides
+            batch_generator(Python Generator, deprecated): The batch generator provides
                 calibrate data for DataLoader, and it returns a batch every
                 time. Note that, sample_generator and batch_generator, only one
-                should be set. Beisdes, batch_generator supports lod tensor.
-            sample_generator(Python Generator): The sample generator provides
+                should be set. Besides, batch_generator supports lod tensor.
+            sample_generator(Python Generator, deprecated): The sample generator provides
                 calibrate data for DataLoader, and it only returns a sample every
                 time. Note that, sample_generator and batch_generator, only one
-                should be set. Beisdes, sample_generator dose not support lod tensor.
-            data_loader(Python Generator, Paddle.io.DataLoader, optional): The
-                Generator or Dataloader provides calibrate data, and it could
+                should be set. Besides, sample_generator dose not support lod tensor.
+            data_loader(Paddle.io.DataLoader): The
+                Dataloader provides calibrate data, and it could
                 return a batch every time.
             batch_size(int, optional): The batch size of DataLoader. Default is 10.
             batch_nums(int, optional): If batch_nums is not None, the number of
                 calibrate data is batch_size*batch_nums. If batch_nums is None, use
                 all data provided by sample_generator as calibrate data.
-            algo(str, optional): If algo='KL', use KL-divergenc method to
+            algo(str, optional): If algo='KL', use KL-divergence method to
                 get the KL threshold for quantized activations and get the abs_max
                 value for quantized weights. If algo='abs_max', get the abs max
                 value for activations and weights. If algo= 'min_max', get the min
@@ -250,41 +247,45 @@ class PostTrainingQuantization:
             None
 
         Examples:
-        .. code-block:: python
-            import paddle.static as static
-            from paddle.static.quantization import PostTrainingQuantization
+            .. code-block:: python
 
-            exe = static.Executor(paddle.CPUPlace())
-            model_dir = path/to/fp32_model_params
-            # set model_filename as None when the filename is __model__,
-            # otherwise set it as the real filename
-            model_filename = None
-            # set params_filename as None when all parameters were saved in
-            # separate files, otherwise set it as the real filename
-            params_filename = None
-            save_model_path = path/to/save_model_path
-            # prepare the sample generator according to the model, and the
-            # sample generator must return a sample every time. The reference
-            # document: https://www.paddlepaddle.org.cn/documentation/docs/zh
-            # /user_guides/howto/prepare_data/use_py_reader.html
-            sample_generator = your_sample_generator
-            batch_size = 10
-            batch_nums = 10
-            algo = "KL"
-            quantizable_op_type = ["conv2d", "depthwise_conv2d", "mul"]
-            ptq = PostTrainingQuantization(
-                        executor=exe,
-                        sample_generator=sample_generator,
-                        model_dir=model_dir,
-                        model_filename=model_filename,
-                        params_filename=params_filename,
-                        batch_size=batch_size,
-                        batch_nums=batch_nums,
-                        algo=algo,
-                        quantizable_op_type=quantizable_op_type)
-            ptq.quantize()
-            ptq.save_quantized_model(save_model_path)
-        '''
+                >>> # doctest: +SKIP("There are some example variables in the code.")
+                >>> import paddle.static as static
+                >>> from paddle.static.quantization import PostTrainingQuantization
+
+                >>> exe = static.Executor(paddle.CPUPlace())
+                >>> model_dir = "path/to/fp32_model_params"
+                >>> # set model_filename as None when the filename is __model__,
+                >>> # otherwise set it as the real filename
+                >>> model_filename = None
+                >>> # set params_filename as None when all parameters were saved in
+                >>> # separate files, otherwise set it as the real filename
+                >>> params_filename = None
+                >>> save_model_path = "path/to/save_model_path"
+                >>> # prepare the sample generator according to the model, and the
+                >>> # sample generator must return a sample every time. The reference
+                >>> # document: https://www.paddlepaddle.org.cn/documentation/docs/zh
+                >>> # /user_guides/howto/prepare_data/use_py_reader.html
+                >>> data_loader = your_data_loader
+                >>> batch_size = 10
+                >>> batch_nums = 10
+                >>> algo = "KL"
+                >>> quantizable_op_type = ["conv2d", "depthwise_conv2d", "mul"]
+                >>> ptq = PostTrainingQuantization(
+                ...     executor=exe,
+                ...     sample_generator=None,
+                ...     data_loader=data_loader,
+                ...     model_dir=model_dir,
+                ...     model_filename=model_filename,
+                ...     params_filename=params_filename,
+                ...     batch_size=batch_size,
+                ...     batch_nums=batch_nums,
+                ...     algo=algo,
+                ...     quantizable_op_type=quantizable_op_type
+                ... )
+                >>> ptq.quantize()
+                >>> ptq.save_quantized_model(save_model_path)
+        """
 
         self._support_activation_quantize_type = [
             'range_abs_max',
@@ -309,22 +310,12 @@ class PostTrainingQuantization:
 
         # Check inputs
         assert executor is not None, "The executor cannot be None."
-        assert any(
-            [gen is not None]
-            for gen in [sample_generator, batch_generator, data_loader]
-        ), (
-            "The sample_generator, batch_generator "
-            "and data_loader cannot be None in the same time."
-        )
-        if data_loader is not None:
-            assert isinstance(
-                data_loader,
-                (
-                    io.DataLoader,
-                    type(isgeneratorfunction),
-                    reader.GeneratorLoader,
-                ),
-            ), "data_loader only accepts `paddle.io.DataLoader` or Generator instance."
+        assert data_loader is not None, "data_loader cannot be None."
+
+        assert isinstance(
+            data_loader, io.DataLoader
+        ), "data_loader only accepts `paddle.io.DataLoader`."
+
         assert batch_size > 0, "The batch_size should be greater than 0."
         assert (
             algo in self._support_algo_type
@@ -336,7 +327,7 @@ class PostTrainingQuantization:
         )
         assert (
             weight_quantize_type in self._support_weight_quantize_type
-        ), "The weight_quantize_type ({}) shoud in ({}).".format(
+        ), "The weight_quantize_type ({}) should in ({}).".format(
             weight_quantize_type, self._support_weight_quantize_type
         )
 
@@ -509,7 +500,7 @@ class PostTrainingQuantization:
         self._reset_activation_persistable()
 
         if self._algo == 'min_max':
-            self._save_input_threhold()
+            self._save_input_threshold()
         else:
             self._update_program()
 
@@ -615,29 +606,8 @@ class PostTrainingQuantization:
             for var_name in self._feed_list
         ]
 
-        if self._data_loader is not None:
-            self._batch_nums = (
-                self._batch_nums if self._batch_nums else len(self._data_loader)
-            )
-            return
-        self._data_loader = reader.DataLoader.from_generator(
-            feed_list=feed_vars, capacity=3 * self._batch_size, iterable=True
-        )
-        if self._sample_generator is not None:
-            self._data_loader.set_sample_generator(
-                self._sample_generator,
-                batch_size=self._batch_size,
-                drop_last=True,
-                places=self._place,
-            )
-        elif self._batch_generator is not None:
-            self._data_loader.set_batch_generator(
-                self._batch_generator, places=self._place
-            )
         self._batch_nums = (
-            self._batch_nums
-            if self._batch_nums
-            else len(list(self._data_loader))
+            self._batch_nums if self._batch_nums else len(self._data_loader)
         )
 
     def _optimize_fp32_model(self):
@@ -1085,7 +1055,7 @@ class PostTrainingQuantization:
             threshold = q_max * scale
             self._quantized_threshold[var_name] = threshold
 
-    def _save_input_threhold(self):
+    def _save_input_threshold(self):
         '''
         Save input threshold to the quantized op.
         '''
@@ -1600,7 +1570,7 @@ class WeightQuantization:
     def __init__(self, model_dir, model_filename=None, params_filename=None):
         '''
         This class quantizes the weight of some ops to reduce the size of model
-        or improve the perforemace.
+        or improve the performance.
 
         Args:
             model_dir(str): The path of the fp32 model that will be quantized,
@@ -1655,7 +1625,7 @@ class WeightQuantization:
                 as True, it saves a fake quantized model, in which the weights
                 are quantized and dequantized. We can use PaddlePaddle to load
                 the fake quantized model and test the accuracy on GPU or CPU.
-            threshold_rate(float, optional): This api uses abs_max methd to
+            threshold_rate(float, optional): This api uses abs_max method to
                 quantize the weight from float32 to int8/16, and the abs max
                 value is important for quantization diff. When the abs_max
                 value is far away from the center of the numerical distribution,

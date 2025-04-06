@@ -83,7 +83,7 @@ function(kernel_declare TARGET_LIST)
     string(
       REGEX
         MATCH
-        "(PD_REGISTER_KERNEL|PD_REGISTER_KERNEL_FOR_ALL_DTYPE|PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE)\\([ \t\r\n]*[a-z0-9_]*,[[ \\\t\r\n\/]*[a-z0-9_]*]?[ \\\t\r\n]*[a-zA-Z_]*,[ \\\t\r\n]*[A-Z_]*"
+        "(PD_REGISTER_KERNEL|PD_REGISTER_KERNEL_FOR_ALL_DTYPE|PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE|PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE_EXCEPT_CUSTOM)\\([ \t\r\n]*[a-z0-9_]*,[[ \\\t\r\n\/]*[a-z0-9_]*]?[ \\\t\r\n]*[a-zA-Z_]*,[ \\\t\r\n]*[A-Z_]*"
         first_registry
         "${kernel_impl}")
     set(kernel_declare_id "")
@@ -115,13 +115,26 @@ function(kernel_declare TARGET_LIST)
         string(
           REGEX
             MATCH
-            "(PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE)\\([ \t\r\n]*[a-z0-9_]*,[[ \\\t\r\n\/]*[a-z0-9_]*]?[ \\\t\r\n]*[a-zA-Z_]*,[ \\\t\r\n]*[A-Z_]*"
+            "(PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE_EXCEPT_CUSTOM)\\([ \t\r\n]*[a-z0-9_]*,[[ \\\t\r\n\/]*[a-z0-9_]*]?[ \\\t\r\n]*[a-zA-Z_]*,[ \\\t\r\n]*[A-Z_]*"
             is_all_backend
             "${first_registry}")
+        if(NOT is_all_backend STREQUAL "")
+          # parse the registerd kernel message
+          string(
+            REPLACE "PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE_EXCEPT_CUSTOM("
+                    "" kernel_msg "${first_registry}")
+        else()
+          string(
+            REGEX
+              MATCH
+              "(PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE)\\([ \t\r\n]*[a-z0-9_]*,[[ \\\t\r\n\/]*[a-z0-9_]*]?[ \\\t\r\n]*[a-zA-Z_]*,[ \\\t\r\n]*[A-Z_]*"
+              is_all_backend
+              "${first_registry}")
 
-        # parse the registerd kernel message
-        string(REPLACE "PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE(" ""
-                       kernel_msg "${first_registry}")
+          # parse the registerd kernel message
+          string(REPLACE "PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE(" ""
+                         kernel_msg "${first_registry}")
+        endif()
         string(REPLACE "PD_REGISTER_KERNEL(" "" kernel_msg "${kernel_msg}")
         string(REPLACE "PD_REGISTER_KERNEL_FOR_ALL_DTYPE(" "" kernel_msg
                        "${kernel_msg}")
@@ -146,7 +159,7 @@ function(kernel_declare TARGET_LIST)
           string(
             REGEX
               MATCH
-              "(PD_REGISTER_KERNEL|PD_REGISTER_KERNEL_FOR_ALL_DTYPE|PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE)\\([ \t\r\n]*[a-z0-9_]*,[[ \\\t\r\n\/]*[a-z0-9_]*]?[ \\\t\r\n]*[a-zA-Z_]*,[ \\\t\r\n]*[A-Z_]*"
+              "(PD_REGISTER_KERNEL|PD_REGISTER_KERNEL_FOR_ALL_DTYPE|PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE|PD_REGISTER_KERNEL_FOR_ALL_BACKEND_DTYPE_EXCEPT_CUSTOM)\\([ \t\r\n]*[a-z0-9_]*,[[ \\\t\r\n\/]*[a-z0-9_]*]?[ \\\t\r\n]*[a-zA-Z_]*,[ \\\t\r\n]*[A-Z_]*"
               first_registry
               "${kernel_impl}")
         endif()
@@ -157,55 +170,6 @@ function(kernel_declare TARGET_LIST)
       file(APPEND ${kernel_declare_file} "${kernel_declare_id}\n")
     endif()
   endforeach()
-endfunction()
-
-function(append_op_util_declare TARGET)
-  file(READ ${TARGET} target_content)
-  string(REGEX MATCH "(PD_REGISTER_ARG_MAPPING_FN)\\([ \t\r\n]*[a-z0-9_]*"
-               util_registrar "${target_content}")
-  if(NOT ${util_registrar} EQUAL "")
-    string(REPLACE "PD_REGISTER_ARG_MAPPING_FN" "PD_DECLARE_ARG_MAPPING_FN"
-                   util_declare "${util_registrar}")
-    string(APPEND util_declare ");\n")
-    file(APPEND ${op_utils_header} "${util_declare}")
-  endif()
-endfunction()
-
-function(append_op_kernel_map_declare TARGET)
-  file(READ ${TARGET} target_content)
-  string(
-    REGEX
-      MATCH
-      "(PD_REGISTER_BASE_KERNEL_NAME)\\([ \t\r\n]*[a-z0-9_]*,[ \\\t\r\n]*[a-z0-9_]*"
-      kernel_mapping_registrar
-      "${target_content}")
-  if(NOT ${kernel_mapping_registrar} EQUAL "")
-    string(REPLACE "PD_REGISTER_BASE_KERNEL_NAME" "PD_DECLARE_BASE_KERNEL_NAME"
-                   kernel_mapping_declare "${kernel_mapping_registrar}")
-    string(APPEND kernel_mapping_declare ");\n")
-    file(APPEND ${op_utils_header} "${kernel_mapping_declare}")
-  endif()
-endfunction()
-
-function(register_op_utils TARGET_NAME)
-  set(utils_srcs)
-  set(options "")
-  set(oneValueArgs "")
-  set(multiValueArgs EXCLUDES DEPS)
-  cmake_parse_arguments(register_op_utils "${options}" "${oneValueArgs}"
-                        "${multiValueArgs}" ${ARGN})
-
-  file(GLOB SIGNATURES "${PADDLE_SOURCE_DIR}/paddle/phi/ops/compat/*_sig.cc")
-  foreach(target ${SIGNATURES})
-    append_op_util_declare(${target})
-    append_op_kernel_map_declare(${target})
-    list(APPEND utils_srcs ${target})
-  endforeach()
-
-  cc_library(
-    ${TARGET_NAME}
-    SRCS ${utils_srcs}
-    DEPS ${register_op_utils_DEPS})
 endfunction()
 
 function(prune_declaration_h)
